@@ -561,8 +561,17 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`finance-tracker listening on http://localhost:${PORT}`);
   console.log(`DB: ${DB_PATH}`);
   console.log(`Google Sheets sync: ${syncEnabled() ? 'ENABLED' : 'off (CSV export only)'}`);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n✗ Port ${PORT} is already in use by another app.`);
+    console.error(`  Start finance-tracker on a different port, e.g.:  PORT=3001 npm start\n`);
+    process.exit(1);
+  }
+  throw err;
 });
