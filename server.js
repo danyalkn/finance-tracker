@@ -135,8 +135,17 @@ function stringField(value, name, { min = 1, max = 280, required = true } = {}) 
   return trimmed;
 }
 
+// Local wall-clock ISO (no timezone suffix), matching the client's localISO().
+// Used for server-side fallbacks so month bucketing reflects the LOCAL calendar.
+function serverLocalISO(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(
+    d.getMinutes(),
+  )}:${p(d.getSeconds())}`;
+}
+
 function currentMonth() {
-  return new Date().toISOString().slice(0, 7);
+  return serverLocalISO().slice(0, 7);
 }
 
 function validateMonth(month) {
@@ -153,12 +162,17 @@ function validateMonth(month) {
 // calendar date.
 function normalizeCreatedAt(value) {
   if (value === undefined || value === null || value === '') {
-    return new Date().toISOString();
+    return serverLocalISO();
   }
   if (typeof value !== 'string') throw new ApiError(400, 'created_at must be a string');
-  const t = Date.parse(value);
-  if (Number.isNaN(t)) throw new ApiError(400, 'created_at is not a valid date');
-  return value.trim();
+  const trimmed = value.trim();
+  // Month filtering and ordering rely on a literal YYYY-MM-DD prefix, so require
+  // one. This rejects parseable-but-non-ISO strings ("03/15/2026", "March 5 2026")
+  // that would otherwise be stored verbatim and become invisible to every month view.
+  if (!/^\d{4}-\d{2}-\d{2}/.test(trimmed) || Number.isNaN(Date.parse(trimmed))) {
+    throw new ApiError(400, 'created_at must be local ISO starting YYYY-MM-DD');
+  }
+  return trimmed;
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +356,10 @@ app.post(
       });
     }
 
-    const month = validateMonth(req.query.month || created_at.slice(0, 7));
+    // The row is already committed; never throw while building the response.
+    // created_at is guaranteed to start YYYY-MM-DD, so its prefix is a valid month.
+    const q = req.query.month;
+    const month = typeof q === 'string' && MONTH_RE.test(q) ? q : created_at.slice(0, 7);
     res.status(201).json({ ok: true, transaction: txn, state: getState(month) });
   }),
 );
@@ -458,7 +475,10 @@ app.delete(
 
 // ---- CSV export (all transactions, all time) -------------------------------
 function csvEscape(field) {
-  const s = String(field ?? '');
+  let s = String(field ?? '');
+  // Neutralize spreadsheet formula injection: a leading = + - @ (or tab/CR) makes
+  // Excel/Sheets evaluate the cell as a formula. Prefix with ' so it stays literal.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -528,6 +548,17 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 app.get('*', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(join(PUBLIC_DIR, 'index.html'));
+});
+
+// Terminal JSON error handler — keeps the {error} shape even for body-parser
+// failures (malformed/oversized JSON), which throw before any route runs.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err && (err.type === 'entity.parse.failed' || err.type === 'entity.too.large' || err instanceof SyntaxError)) {
+    return res.status(err.status || 400).json({ error: 'Invalid request body' });
+  }
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => {

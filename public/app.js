@@ -62,11 +62,19 @@ function dollarsStr(cents) {
   return (cents / 100).toFixed(2);
 }
 function parseDollarsToCents(str) {
-  const cleaned = String(str).replace(/[^0-9.\-]/g, '');
-  if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
-  const v = Number(cleaned);
-  if (!Number.isFinite(v)) return null;
-  return Math.round(v * 100);
+  // Strict decimal only — reject stray letters/exponents instead of silently
+  // truncating them (e.g. "1e2"/"12abc" -> null, not $12). String-based cents
+  // avoids IEEE-754 drift (e.g. "1.005" -> 101, not 100).
+  const m = /^(-?)(\d*)(?:\.(\d*))?$/.exec(String(str).trim());
+  if (!m) return null;
+  const intPart = m[2] || '';
+  const fracRaw = m[3] || '';
+  if (intPart === '' && fracRaw === '') return null; // "", ".", "-"
+  const sign = m[1] === '-' ? -1 : 1;
+  const dollars = intPart === '' ? 0 : Number(intPart);
+  const frac2 = Number((fracRaw + '00').slice(0, 2));
+  const roundUp = fracRaw.length > 2 && Number(fracRaw[2]) >= 5 ? 1 : 0;
+  return sign * (dollars * 100 + frac2 + roundUp);
 }
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -94,12 +102,17 @@ function shiftMonth(month, delta) {
   while (m > 12) { m -= 12; y++; }
   return `${y}-${pad2(m)}`;
 }
-// fraction of the month elapsed (the pace marker), computed from the LOCAL clock
+// fraction of the month actually elapsed (the pace marker), from the LOCAL clock.
+// Counts whole days before today plus the fraction of today, so on day 1 the
+// marker sits near 0 rather than at 1/N.
 function paceFraction(month) {
   const cur = localMonthStr();
   if (month < cur) return 1; // a past month is fully elapsed
   if (month > cur) return 0; // a future month hasn't started
-  return new Date().getDate() / daysInMonth(month);
+  const now = new Date();
+  const elapsedDays =
+    now.getDate() - 1 + (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) / 86400;
+  return elapsedDays / daysInMonth(month);
 }
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -287,17 +300,33 @@ function renderCharts() {
   center.innerHTML = `<div class="cc-total num">${fmt(total)}</div><div class="cc-label">${
     chartMode === 'category' ? 'by category' : 'by importance'
   }</div>`;
+  const pcts = largestRemainder(items.map((x) => x.value), total);
   legend.innerHTML = items
-    .map((x) => {
-      const pct = ((x.value / total) * 100).toFixed(total > 0 ? 0 : 0);
-      return `<li>
+    .map(
+      (x, i) => `<li>
         <span class="swatch" style="background:${x.color}"></span>
         <span class="lg-label">${escapeHtml(x.label)}</span>
         <span class="lg-amt num">${fmt(x.value)}</span>
-        <span class="lg-pct num">${pct}%</span>
-      </li>`;
-    })
+        <span class="lg-pct num">${pcts[i]}%</span>
+      </li>`,
+    )
     .join('');
+}
+
+// Integer percentages that always sum to `target` (largest-remainder method),
+// so the legend never shows 101% from independent rounding.
+function largestRemainder(values, total, target = 100) {
+  if (total <= 0) return values.map(() => 0);
+  const exact = values.map((v) => (v / total) * target);
+  const out = exact.map((e) => Math.floor(e));
+  let left = target - out.reduce((a, b) => a + b, 0);
+  exact
+    .map((e, i) => ({ i, frac: e - Math.floor(e) }))
+    .sort((a, b) => b.frac - a.frac)
+    .forEach((o) => {
+      if (left-- > 0) out[o.i] += 1;
+    });
+  return out;
 }
 
 function buildPie(items, total) {
@@ -343,24 +372,30 @@ function renderBudget() {
         : `${fmt(-d.savingsGap)} short of your ${fmt(d.savingsGoal)} goal.`
     }</div>`;
 
-  $('budgetCategories').innerHTML = state.categories
-    .map(
-      (c) => `<div class="bc-row" data-id="${c.id}">
-      <input class="bc-name" value="${escapeHtml(c.name)}" maxlength="40" />
-      <div class="bc-budget"><span>$</span><input class="bc-budget-input" inputmode="decimal" value="${dollarsStr(
-        c.budget_cents,
-      )}" /></div>
-      <div class="bc-controls">
-        <div class="type-toggle">
-          <button data-type="fixed" class="${c.type === 'fixed' ? 'active' : ''}">Fixed</button>
-          <button data-type="variable" class="${c.type === 'variable' ? 'active' : ''}">Variable</button>
+  // Don't rebuild the rows while the user is editing one — replacing innerHTML
+  // would destroy the focused input and drop in-flight keystrokes. The summary
+  // above still refreshes; the rows resync on the next render once focus leaves.
+  const catsEl = $('budgetCategories');
+  if (!catsEl.contains(document.activeElement)) {
+    catsEl.innerHTML = state.categories
+      .map(
+        (c) => `<div class="bc-row" data-id="${c.id}">
+        <input class="bc-name" value="${escapeHtml(c.name)}" maxlength="40" />
+        <div class="bc-budget"><span>$</span><input class="bc-budget-input" inputmode="decimal" value="${dollarsStr(
+          c.budget_cents,
+        )}" /></div>
+        <div class="bc-controls">
+          <div class="type-toggle">
+            <button data-type="fixed" class="${c.type === 'fixed' ? 'active' : ''}">Fixed</button>
+            <button data-type="variable" class="${c.type === 'variable' ? 'active' : ''}">Variable</button>
+          </div>
+          <span class="bc-spent num">${fmt(c.spent_cents)} spent</span>
+          <button class="bc-del" data-del aria-label="Delete category">🗑</button>
         </div>
-        <span class="bc-spent num">${fmt(c.spent_cents)} spent</span>
-        <button class="bc-del" data-del aria-label="Delete category">🗑</button>
-      </div>
-    </div>`,
-    )
-    .join('');
+      </div>`,
+      )
+      .join('');
+  }
 
   // sync box
   const sync = $('syncBox');
@@ -434,10 +469,10 @@ async function savePurchase() {
   if (entryCents <= 0 || entryCategoryId == null) return;
   $('logSave').disabled = true;
   $('logSaveBig').disabled = true;
-  // a purchase is logged "now"; jump to the current month so it shows on Home
-  selectedMonth = localMonthStr();
+  // a purchase is logged "now" -> it belongs to the current local month
+  const logMonth = localMonthStr();
   try {
-    const resp = await api(`/api/transactions${monthQS()}`, {
+    const resp = await api(`/api/transactions?month=${encodeURIComponent(logMonth)}`, {
       method: 'POST',
       body: {
         amount_cents: entryCents,
@@ -447,11 +482,13 @@ async function savePurchase() {
         created_at: localISO(),
       },
     });
+    selectedMonth = logMonth; // only switch the viewed month after a successful save
     applyState(resp.state);
     closeSheet();
     showScreen('home');
     toast('Logged ✓');
   } catch (e) {
+    // selectedMonth is untouched on failure, so the view stays consistent
     toast(e.message, true);
     updateEntryDisplay();
   }
@@ -535,6 +572,7 @@ function wireEvents() {
         toast('Deleted');
       } catch (err) {
         toast(err.message, true);
+        renderHome(); // resync the now-cleared confirm UI after a failed delete
       }
     }
   });
