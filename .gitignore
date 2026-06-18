@@ -13,6 +13,9 @@ data/
 *.local
 google-service-account.json
 
+# Local Claude Code session settings (per-machine, not project config)
+.claude/
+
 # OS / editor cruft
 .DS_Store
 *.log
