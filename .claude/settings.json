@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(node --experimental-sqlite -e \"const {DatabaseSync}=require\\('node:sqlite'\\); const db=new DatabaseSync\\(':memory:'\\); db.exec\\('CREATE TABLE t\\(a INTEGER\\)'\\); db.prepare\\('INSERT INTO t VALUES \\(?\\)'\\).run\\(42\\); console.log\\('node:sqlite OK', db.prepare\\('SELECT a FROM t'\\).get\\(\\)\\);\")",
+      "Bash(node -e \"const {DatabaseSync}=require\\('node:sqlite'\\); console.log\\('works without flag'\\);\")",
+      "Bash(npm install *)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'Scaffold finance-tracker: package.json, express dep, .gitignore *)"
+    ]
+  }
+}

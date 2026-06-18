@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Database / runtime data (the DB lives on a persistent disk in prod, never in git)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Secrets / service-account keys
+.env
+*.local
+google-service-account.json
+
+# OS / editor cruft
+.DS_Store
+*.log
+npm-debug.log*

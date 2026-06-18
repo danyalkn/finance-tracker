@@ -1,0 +1,19 @@
+{
+  "name": "finance-tracker",
+  "version": "1.0.0",
+  "description": "A tiny personal spending-tracker PWA with a Node + SQLite backend. One user, one phone, a 5-second log.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --experimental-sqlite server.js",
+    "dev": "node --experimental-sqlite --watch server.js",
+    "gen-icons": "node tools/gen-icons.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "express": "^4.22.2"
+  },
+  "license": "MIT"
+}
