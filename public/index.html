@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+    />
+    <title>Finance Tracker</title>
+    <meta name="description" content="Log every purchase in a few taps and stay on budget." />
+
+    <!-- iOS / Add to Home Screen -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Spend" />
+    <meta name="theme-color" content="#1A1714" />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button id="monthPrev" class="month-btn" aria-label="Previous month">‹</button>
+      <h1 id="monthLabel" class="month-label">—</h1>
+      <button id="monthNext" class="month-btn" aria-label="Next month">›</button>
+    </header>
+
+    <main id="main">
+      <!-- ============ HOME ============ -->
+      <section id="screen-home" class="screen">
+        <div class="hero" id="hero">
+          <div class="hero-label">Left to spend</div>
+          <div class="hero-amount" id="heroAmount">—</div>
+          <div class="bar">
+            <div class="bar-fill" id="heroFill"></div>
+            <div class="bar-pace" id="heroPace"><span class="bar-pace-tick"></span></div>
+          </div>
+          <div class="hero-meta">
+            <span id="heroSpentLabel">—</span>
+            <span id="heroPaceLabel">—</span>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat" id="savingsStat">
+            <div class="stat-title">Projected savings</div>
+            <div class="stat-value" id="savingsValue">—</div>
+            <div class="stat-sub" id="savingsSub">—</div>
+          </div>
+          <div class="stat regret" id="regretStat">
+            <div class="stat-title">Shouldn't have</div>
+            <div class="stat-value" id="regretValue">—</div>
+            <div class="stat-sub">money I regret</div>
+          </div>
+        </div>
+
+        <h2 class="section-title">Categories</h2>
+        <div id="categoryCards" class="category-cards"></div>
+
+        <h2 class="section-title">Recent purchases</h2>
+        <ul id="recentList" class="recent"></ul>
+        <div id="recentEmpty" class="empty hidden">No purchases logged this month yet.</div>
+      </section>
+
+      <!-- ============ CHARTS ============ -->
+      <section id="screen-charts" class="screen hidden">
+        <div class="seg" id="chartToggle" role="tablist">
+          <button class="seg-btn active" data-mode="category">By Category</button>
+          <button class="seg-btn" data-mode="importance">By Importance</button>
+        </div>
+        <div class="chart-wrap">
+          <svg id="pie" viewBox="0 0 200 200" width="220" height="220" aria-label="spending chart"></svg>
+          <div class="chart-center" id="chartCenter"></div>
+        </div>
+        <ul id="legend" class="legend"></ul>
+        <div id="chartEmpty" class="empty hidden">No spending to chart for this month.</div>
+      </section>
+
+      <!-- ============ BUDGET ============ -->
+      <section id="screen-budget" class="screen hidden">
+        <h2 class="section-title">Income &amp; goal</h2>
+        <div class="field">
+          <label for="incomeInput">Monthly income</label>
+          <div class="money-input"><span>$</span><input id="incomeInput" inputmode="decimal" /></div>
+        </div>
+        <div class="field">
+          <label for="goalInput">Savings goal / month</label>
+          <div class="money-input"><span>$</span><input id="goalInput" inputmode="decimal" /></div>
+        </div>
+
+        <div class="budget-summary" id="budgetSummary"></div>
+
+        <div class="section-head">
+          <h2 class="section-title">Categories</h2>
+          <button id="addCategoryBtn" class="ghost-btn">+ Add</button>
+        </div>
+        <div id="budgetCategories" class="budget-cats"></div>
+
+        <h2 class="section-title">Data</h2>
+        <div class="data-controls">
+          <a class="ghost-btn block" id="exportBtn" href="/api/export.csv">Export all data (CSV)</a>
+          <div class="sync-box" id="syncBox"></div>
+        </div>
+        <div class="version">finance-tracker · data lives on the server</div>
+      </section>
+    </main>
+
+    <!-- ============ BOTTOM NAV ============ -->
+    <nav class="tabbar">
+      <button class="tab active" data-screen="home">
+        <span class="tab-ico">⌂</span><span>Home</span>
+      </button>
+      <button class="tab" data-screen="charts">
+        <span class="tab-ico">◔</span><span>Charts</span>
+      </button>
+      <button class="tab" data-screen="budget">
+        <span class="tab-ico">≡</span><span>Budget</span>
+      </button>
+      <button class="tab log" id="logBtn">
+        <span class="tab-ico">＋</span><span>Log</span>
+      </button>
+    </nav>
+
+    <!-- ============ LOG SHEET ============ -->
+    <div id="logBackdrop" class="backdrop hidden"></div>
+    <div id="logSheet" class="sheet hidden" role="dialog" aria-modal="true" aria-label="Log a purchase">
+      <div class="sheet-head">
+        <button id="logCancel" class="link-btn">Cancel</button>
+        <span class="sheet-title">New purchase</span>
+        <button id="logSave" class="link-btn save" disabled>Save</button>
+      </div>
+
+      <div class="amount-display" id="amountDisplay">$0.00</div>
+
+      <div class="seg importance-seg" id="importancePicker">
+        <button class="seg-btn" data-imp="essential">Essential</button>
+        <button class="seg-btn active" data-imp="have_to_have">Have to Have</button>
+        <button class="seg-btn" data-imp="nice_to_have">Nice to Have</button>
+        <button class="seg-btn" data-imp="shouldnt_have">Shouldn't Have</button>
+      </div>
+
+      <div class="chips" id="categoryChips"></div>
+
+      <input id="noteInput" class="note-input" placeholder="Note (optional)" maxlength="280" />
+
+      <div class="keypad" id="keypad">
+        <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
+        <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
+        <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
+        <button data-key="00">00</button><button data-key="0">0</button>
+        <button data-key="del" class="key-del" aria-label="delete">⌫</button>
+      </div>
+      <button id="logSaveBig" class="save-big" disabled>Save purchase</button>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

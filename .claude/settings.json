@@ -20,7 +20,8 @@
       "Bash(node -e 'const d=JSON.parse\\(require\\(\"fs\"\\).readFileSync\\(0\\)\\);console.log\\(\"txns\",d.transactions.length,\"variableSpent\",d.derived.variableSpent\\)')",
       "Bash(kill 79325)",
       "Bash(rm -f /tmp/ft-test.db /tmp/ft-test.db-* /tmp/ft-server.log /tmp/r.json)",
-      "Bash(git commit -q -m 'Add backend server.js \\(node:sqlite\\) and procedurally-generated PWA icons *)"
+      "Bash(git commit -q -m 'Add backend server.js \\(node:sqlite\\) and procedurally-generated PWA icons *)",
+      "Bash(git commit -q -m 'Add PWA frontend: app shell, styles, app logic, manifest, service worker *)"
     ]
   }
 }
