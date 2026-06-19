@@ -134,9 +134,13 @@ async function api(path, opts = {}) {
   }
   let res;
   try {
-    res = await fetch(path, init);
+    res = await fetch(path, { credentials: 'same-origin', ...init });
   } catch {
     throw new Error("You're offline — that needs a connection.");
+  }
+  if (res.status === 401) {
+    showLock(); // session missing/expired — re-prompt for the password
+    throw new Error('Please log in');
   }
   let data = {};
   try {
@@ -664,14 +668,80 @@ async function deleteCategory(id) {
 }
 
 // ============================================================
+// AUTH (password gate)
+// ============================================================
+function showLock() {
+  $('lockError').classList.add('hidden');
+  $('lockScreen').classList.remove('hidden');
+  const p = $('lockPassword');
+  p.value = '';
+  setTimeout(() => p.focus(), 50);
+}
+function hideLock() {
+  $('lockScreen').classList.add('hidden');
+}
+async function unlock() {
+  const password = $('lockPassword').value;
+  if (!password) return;
+  $('lockUnlock').disabled = true;
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) {
+      $('lockError').classList.remove('hidden');
+      $('lockPassword').select();
+      return;
+    }
+    hideLock();
+    await loadState();
+  } catch {
+    $('lockError').textContent = "Couldn't reach the server.";
+    $('lockError').classList.remove('hidden');
+  } finally {
+    $('lockUnlock').disabled = false;
+  }
+}
+async function doLogout() {
+  try {
+    await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+  } catch {
+    /* ignore */
+  }
+  showLock();
+}
+function wireAuth() {
+  $('lockUnlock').onclick = unlock;
+  $('lockPassword').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') unlock();
+  });
+  $('logoutBtn').onclick = doLogout;
+}
+
+// ============================================================
 // INIT
 // ============================================================
-function init() {
+async function init() {
   wireEvents();
+  wireAuth();
   showScreen('home');
-  loadState();
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  }
+  let auth = { required: false, authed: true };
+  try {
+    auth = await (await fetch('/api/auth', { credentials: 'same-origin' })).json();
+  } catch {
+    /* offline: fall through to loadState, which will surface the error */
+  }
+  if (auth.required) $('logoutBtn').classList.remove('hidden');
+  if (auth.required && !auth.authed) {
+    showLock();
+  } else {
+    loadState();
   }
 }
 init();

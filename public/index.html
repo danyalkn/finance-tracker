@@ -22,6 +22,25 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <!-- ============ LOCK SCREEN ============ -->
+    <div id="lockScreen" class="lock hidden">
+      <div class="lock-card">
+        <div class="lock-icon">🔒</div>
+        <h1 class="lock-title">Finance Tracker</h1>
+        <p class="lock-sub">Enter your password to continue.</p>
+        <input
+          id="lockPassword"
+          class="lock-input"
+          type="password"
+          inputmode="text"
+          autocomplete="current-password"
+          placeholder="Password"
+        />
+        <div id="lockError" class="lock-error hidden">Wrong password — try again.</div>
+        <button id="lockUnlock" class="lock-btn">Unlock</button>
+      </div>
+    </div>
+
     <header class="topbar">
       <button id="monthPrev" class="month-btn" aria-label="Previous month">‹</button>
       <h1 id="monthLabel" class="month-label">—</h1>
@@ -103,6 +122,7 @@
         <div class="data-controls">
           <a class="ghost-btn block" id="exportBtn" href="/api/export.csv">Export all data (CSV)</a>
           <div class="sync-box" id="syncBox"></div>
+          <button class="ghost-btn block hidden" id="logoutBtn">Log out</button>
         </div>
         <div class="version">finance-tracker · data lives on the server</div>
       </section>

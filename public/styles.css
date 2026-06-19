@@ -886,6 +886,73 @@ button {
   background: var(--amber);
 }
 
+/* ---------- lock screen ---------- */
+.lock {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  padding-top: calc(24px + var(--safe-top));
+  background: radial-gradient(120% 90% at 50% 0%, var(--surface), var(--bg));
+}
+.lock-card {
+  width: 100%;
+  max-width: 340px;
+  text-align: center;
+}
+.lock-icon {
+  font-size: 34px;
+  margin-bottom: 10px;
+}
+.lock-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.lock-sub {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 22px;
+}
+.lock-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 17px;
+  padding: 15px 16px;
+  outline: none;
+  text-align: center;
+}
+.lock-input:focus {
+  border-color: var(--brass);
+}
+.lock-error {
+  color: var(--clay);
+  font-size: 13px;
+  margin-top: 10px;
+}
+.lock-btn {
+  width: 100%;
+  height: 54px;
+  margin-top: 16px;
+  border-radius: 14px;
+  background: var(--brass);
+  color: #2a1c05;
+  font-size: 17px;
+  font-weight: 700;
+}
+.lock-btn:active:not(:disabled) {
+  background: var(--amber);
+}
+.lock-btn:disabled {
+  opacity: 0.6;
+}
+
 /* ---------- toast ---------- */
 .toast {
   position: fixed;
