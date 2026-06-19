@@ -151,11 +151,15 @@ function normalizeCreatedAt(value) {
 // State (the big read used by every screen)
 // ---------------------------------------------------------------------------
 async function getState(month) {
-  const [settings, categories, txns] = await Promise.all([
+  const [settings, categories, txns, allItems] = await Promise.all([
     db.getSettings(),
     db.listCategories(),
     db.listTransactionsForMonth(month),
+    db.listItems(),
   ]);
+
+  const itemsByCategory = {};
+  for (const it of allItems) (itemsByCategory[it.category_id] ||= []).push(it);
 
   const spentByCategory = {};
   for (const c of categories) spentByCategory[c.id] = 0;
@@ -174,7 +178,7 @@ async function getState(month) {
   const cats = categories.map((c) => {
     if (c.type === 'variable') variableBudget += c.budget_cents;
     else fixedBudget += c.budget_cents;
-    return { ...c, spent_cents: spentByCategory[c.id] || 0 };
+    return { ...c, spent_cents: spentByCategory[c.id] || 0, items: itemsByCategory[c.id] || [] };
   });
   const allBudget = variableBudget + fixedBudget;
   const projectedSavings = settings.monthly_income_cents - allBudget;
@@ -416,6 +420,61 @@ app.delete(
       throw new ApiError(409, `Cannot delete: ${used} transaction(s) use this category. Delete or reassign them first.`);
     }
     await db.deleteCategory(id);
+    res.json({ ok: true, state: await getState(validateMonth(req.query.month)) });
+  }),
+);
+
+// ---- budget breakdown items ------------------------------------------------
+// A category with >=1 item has its budget kept in sync with the sum of its items.
+async function recomputeCategoryBudget(categoryId) {
+  const items = await db.itemsForCategory(categoryId);
+  if (items.length === 0) return; // keep the existing manual budget if no items
+  const sum = items.reduce((s, it) => s + it.amount_cents, 0);
+  const cat = await db.getCategory(categoryId);
+  if (cat && cat.budget_cents !== sum) {
+    await db.updateCategory(categoryId, { ...cat, budget_cents: sum });
+  }
+}
+
+app.post(
+  '/api/categories/:id/items',
+  h(async (req, res) => {
+    const categoryId = intField(req.params.id, 'id', { min: 1, max: Number.MAX_SAFE_INTEGER });
+    if (!(await db.getCategory(categoryId))) throw new ApiError(404, 'category not found');
+    const body = req.body || {};
+    const name = stringField(body.name, 'name', { min: 1, max: 40 });
+    const amount_cents = intField(body.amount_cents ?? 0, 'amount_cents', { min: 0 });
+    const position = (await db.maxItemPosition(categoryId)) + 1;
+    const id = await db.insertItem({ category_id: categoryId, name, amount_cents, position });
+    await recomputeCategoryBudget(categoryId);
+    res.status(201).json({ ok: true, id, state: await getState(validateMonth(req.query.month)) });
+  }),
+);
+
+app.put(
+  '/api/items/:id',
+  h(async (req, res) => {
+    const id = intField(req.params.id, 'id', { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const current = await db.getItem(id);
+    if (!current) throw new ApiError(404, 'item not found');
+    const body = req.body || {};
+    const name = body.name === undefined ? current.name : stringField(body.name, 'name', { min: 1, max: 40 });
+    const amount_cents =
+      body.amount_cents === undefined ? current.amount_cents : intField(body.amount_cents, 'amount_cents', { min: 0 });
+    await db.updateItem(id, { name, amount_cents });
+    await recomputeCategoryBudget(current.category_id);
+    res.json({ ok: true, state: await getState(validateMonth(req.query.month)) });
+  }),
+);
+
+app.delete(
+  '/api/items/:id',
+  h(async (req, res) => {
+    const id = intField(req.params.id, 'id', { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const current = await db.getItem(id);
+    if (!current) throw new ApiError(404, 'item not found');
+    await db.deleteItem(id);
+    await recomputeCategoryBudget(current.category_id);
     res.json({ ok: true, state: await getState(validateMonth(req.query.month)) });
   }),
 );

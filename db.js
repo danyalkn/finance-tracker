@@ -3,8 +3,8 @@
 //   - otherwise         -> local SQLite via Node's built-in node:sqlite
 //
 // Both back ends expose the SAME async interface, so server.js never cares which
-// one is live. Money is integer cents everywhere; created_at is a local-ISO
-// string so month filtering is a cheap prefix match in both dialects.
+// one is live. Money is integer cents; created_at is a local-ISO string so month
+// filtering is a cheap prefix match in both dialects.
 
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -28,6 +28,23 @@ const SEED_CATEGORIES = [
   ['Travel', 'variable', 0],
 ];
 
+// Recurring breakdown items per category (cents). A category whose items exist has
+// its budget = sum(items). Backfilled once into any DB whose budget_items is empty.
+const SEED_ITEMS = {
+  Living: [
+    ['Rent to mom', 50000],
+    ['Car insurance', 33000],
+    ['Fuel', 25000],
+    ['Internet', 9500],
+    ['Phone', 4500],
+  ],
+  'Misc.': [
+    ['Donations', 10000],
+    ['Sisters', 3300],
+    ['Buffer', 4700],
+  ],
+};
+
 const TXN_COLS = `t.id, t.amount_cents, t.category_id, c.name AS category_name,
                   c.type AS category_type, t.importance, t.note, t.created_at`;
 
@@ -37,8 +54,7 @@ const TXN_COLS = `t.id, t.amount_cents, t.category_id, c.name AS category_name,
 async function makePostgres() {
   const pgMod = await import('pg');
   const { Pool } = pgMod.default;
-  // Only treat the HOST as local — don't match 'localhost' appearing inside a
-  // password or other URL component.
+  // Only treat the HOST as local — don't match 'localhost' inside a password.
   let host = '';
   try {
     host = new URL(DATABASE_URL).hostname;
@@ -50,8 +66,8 @@ async function makePostgres() {
     connectionString: DATABASE_URL,
     max: 5,
     // Supabase requires TLS. rejectUnauthorized:false is INTENTIONAL (we don't ship
-    // Supabase's CA bundle) — encrypted in transit, but not cert-pinned. Do NOT
-    // delete this ssl object: without it pg would connect WITHOUT TLS.
+    // Supabase's CA) — encrypted, not cert-pinned. Do NOT delete this ssl object:
+    // without it pg would connect WITHOUT TLS.
     ssl: local || process.env.PGSSL_DISABLE ? false : { rejectUnauthorized: false },
   });
   const all = async (text, params) => (await pool.query(text, params)).rows;
@@ -82,8 +98,16 @@ async function makePostgres() {
         note         TEXT,
         created_at   TEXT    NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS budget_items (
+        id           SERIAL PRIMARY KEY,
+        category_id  INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+        name         TEXT    NOT NULL,
+        amount_cents INTEGER NOT NULL DEFAULT 0,
+        position     INTEGER NOT NULL DEFAULT 0
+      );
       CREATE INDEX IF NOT EXISTS idx_txn_created ON transactions(created_at);
       CREATE INDEX IF NOT EXISTS idx_txn_category ON transactions(category_id);
+      CREATE INDEX IF NOT EXISTS idx_item_category ON budget_items(category_id);
     `);
     const n = Number((await one('SELECT COUNT(*)::int AS n FROM settings')).n);
     if (n === 0) {
@@ -98,6 +122,23 @@ async function makePostgres() {
         ]);
       }
       console.log('Seeded settings + 8 categories on first run.');
+    }
+    // backfill breakdown items (also runs once on an already-seeded DB)
+    const items = Number((await one('SELECT COUNT(*)::int AS n FROM budget_items')).n);
+    if (items === 0) {
+      for (const [catName, list] of Object.entries(SEED_ITEMS)) {
+        const cat = await one('SELECT id FROM categories WHERE name=$1 ORDER BY position, id LIMIT 1', [catName]);
+        if (!cat) continue;
+        let pos = 0;
+        for (const [name, amt] of list) {
+          await run('INSERT INTO budget_items (category_id,name,amount_cents,position) VALUES ($1,$2,$3,$4)', [
+            cat.id, name, amt, pos++,
+          ]);
+        }
+        const sum = list.reduce((s, [, a]) => s + a, 0);
+        await run('UPDATE categories SET budget_cents=$1 WHERE id=$2', [sum, cat.id]);
+      }
+      console.log('Seeded recurring breakdown items.');
     }
   }
 
@@ -154,6 +195,23 @@ async function makePostgres() {
       const r = await one('SELECT name FROM categories WHERE id = $1', [id]);
       return r ? r.name : null;
     },
+    // ---- budget breakdown items ----
+    listItems: () =>
+      all('SELECT id, category_id, name, amount_cents, position FROM budget_items ORDER BY category_id, position, id'),
+    itemsForCategory: (cid) =>
+      all('SELECT id, category_id, name, amount_cents, position FROM budget_items WHERE category_id=$1 ORDER BY position, id', [cid]),
+    getItem: (id) => one('SELECT * FROM budget_items WHERE id = $1', [id]),
+    maxItemPosition: async (cid) =>
+      Number((await one('SELECT COALESCE(MAX(position),-1)::int AS m FROM budget_items WHERE category_id=$1', [cid])).m),
+    insertItem: async (it) =>
+      Number(
+        (await one('INSERT INTO budget_items (category_id,name,amount_cents,position) VALUES ($1,$2,$3,$4) RETURNING id', [
+          it.category_id, it.name, it.amount_cents, it.position,
+        ])).id,
+      ),
+    updateItem: (id, it) =>
+      run('UPDATE budget_items SET name=$1, amount_cents=$2 WHERE id=$3', [it.name, it.amount_cents, id]),
+    deleteItem: (id) => run('DELETE FROM budget_items WHERE id = $1', [id]),
   };
 }
 
@@ -191,8 +249,16 @@ async function makeSqlite() {
         note TEXT,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS budget_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0
+      );
       CREATE INDEX IF NOT EXISTS idx_txn_created ON transactions(created_at);
       CREATE INDEX IF NOT EXISTS idx_txn_category ON transactions(category_id);
+      CREATE INDEX IF NOT EXISTS idx_item_category ON budget_items(category_id);
     `);
     const n = db.prepare('SELECT COUNT(*) AS n FROM settings').get().n;
     if (n === 0) {
@@ -202,6 +268,18 @@ async function makeSqlite() {
       const ins = db.prepare('INSERT INTO categories (name, type, budget_cents, position) VALUES (?,?,?,?)');
       SEED_CATEGORIES.forEach((c, i) => ins.run(c[0], c[1], c[2], i));
       console.log('Seeded settings + 8 categories on first run.');
+    }
+    const items = db.prepare('SELECT COUNT(*) AS n FROM budget_items').get().n;
+    if (items === 0) {
+      const insItem = db.prepare('INSERT INTO budget_items (category_id,name,amount_cents,position) VALUES (?,?,?,?)');
+      for (const [catName, list] of Object.entries(SEED_ITEMS)) {
+        const cat = db.prepare('SELECT id FROM categories WHERE name=? ORDER BY position, id LIMIT 1').get(catName);
+        if (!cat) continue;
+        list.forEach((it, i) => insItem.run(cat.id, it[0], it[1], i));
+        const sum = list.reduce((s, [, a]) => s + a, 0);
+        db.prepare('UPDATE categories SET budget_cents=? WHERE id=?').run(sum, cat.id);
+      }
+      console.log('Seeded recurring breakdown items.');
     }
   }
 
@@ -261,12 +339,27 @@ async function makeSqlite() {
       const r = db.prepare('SELECT name FROM categories WHERE id = ?').get(id);
       return r ? r.name : null;
     },
+    // ---- budget breakdown items ----
+    listItems: async () =>
+      db.prepare('SELECT id, category_id, name, amount_cents, position FROM budget_items ORDER BY category_id, position, id').all(),
+    itemsForCategory: async (cid) =>
+      db.prepare('SELECT id, category_id, name, amount_cents, position FROM budget_items WHERE category_id=? ORDER BY position, id').all(cid),
+    getItem: async (id) => db.prepare('SELECT * FROM budget_items WHERE id = ?').get(id),
+    maxItemPosition: async (cid) =>
+      db.prepare('SELECT COALESCE(MAX(position),-1) AS m FROM budget_items WHERE category_id=?').get(cid).m,
+    insertItem: async (it) =>
+      Number(
+        db
+          .prepare('INSERT INTO budget_items (category_id,name,amount_cents,position) VALUES (?,?,?,?)')
+          .run(it.category_id, it.name, it.amount_cents, it.position).lastInsertRowid,
+      ),
+    updateItem: async (id, it) =>
+      db.prepare('UPDATE budget_items SET name=?, amount_cents=? WHERE id=?').run(it.name, it.amount_cents, id),
+    deleteItem: async (id) => db.prepare('DELETE FROM budget_items WHERE id = ?').run(id),
   };
 }
 
 export async function createDb() {
-  // Guard against the classic footgun: deployed (Fly/Render) with no DATABASE_URL,
-  // which would silently write to an ephemeral container file and lose data on deploy.
   if (!DATABASE_URL && (process.env.FLY_APP_NAME || process.env.RENDER || process.env.NODE_ENV === 'production')) {
     console.warn(
       '⚠  No DATABASE_URL set in a production environment — falling back to LOCAL SQLite, ' +

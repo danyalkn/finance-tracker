@@ -32,8 +32,19 @@ CREATE TABLE IF NOT EXISTS transactions (
   created_at   TEXT    NOT NULL
 );
 
+-- Optional per-category breakdown (e.g. Living = rent + insurance + ...). When a
+-- category has items, the app keeps its budget_cents equal to the sum of items.
+CREATE TABLE IF NOT EXISTS budget_items (
+  id           SERIAL PRIMARY KEY,
+  category_id  INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  name         TEXT    NOT NULL,
+  amount_cents INTEGER NOT NULL DEFAULT 0,
+  position     INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_txn_created ON transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_txn_category ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_item_category ON budget_items(category_id);
 
 -- Optional seed (income $8,000 / goal $5,500; Misc. trimmed to $180 to hit goal).
 -- The server seeds the same values automatically if the settings table is empty.

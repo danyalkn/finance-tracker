@@ -390,22 +390,38 @@ function renderBudget() {
   const catsEl = $('budgetCategories');
   if (!catsEl.contains(document.activeElement)) {
     catsEl.innerHTML = state.categories
-      .map(
-        (c) => `<div class="bc-row" data-id="${c.id}">
-        <input class="bc-name" value="${escapeHtml(c.name)}" maxlength="40" />
-        <div class="bc-budget"><span>$</span><input class="bc-budget-input" inputmode="decimal" value="${dollarsStr(
-          c.budget_cents,
-        )}" /></div>
-        <div class="bc-controls">
-          <div class="type-toggle">
-            <button data-type="fixed" class="${c.type === 'fixed' ? 'active' : ''}">Fixed</button>
-            <button data-type="variable" class="${c.type === 'variable' ? 'active' : ''}">Variable</button>
+      .map((c) => {
+        const hasItems = c.items && c.items.length > 0;
+        // when a category has breakdown items, its budget IS their sum (read-only)
+        const budgetSlot = hasItems
+          ? `<div class="bc-total"><span class="bc-total-label">total</span><span class="num">${fmt(c.budget_cents)}</span></div>`
+          : `<div class="bc-budget"><span>$</span><input class="bc-budget-input" inputmode="decimal" value="${dollarsStr(c.budget_cents)}" /></div>`;
+        const items = (c.items || [])
+          .map(
+            (it) => `<div class="bc-item" data-item="${it.id}">
+              <input class="bi-name" value="${escapeHtml(it.name)}" maxlength="40" />
+              <div class="bi-amt"><span>$</span><input class="bi-amt-input" inputmode="decimal" value="${dollarsStr(it.amount_cents)}" /></div>
+              <button class="bi-del" data-item-del aria-label="Remove item">✕</button>
+            </div>`,
+          )
+          .join('');
+        return `<div class="bc-row" data-id="${c.id}">
+          <input class="bc-name" value="${escapeHtml(c.name)}" maxlength="40" />
+          ${budgetSlot}
+          <div class="bc-controls">
+            <div class="type-toggle">
+              <button data-type="fixed" class="${c.type === 'fixed' ? 'active' : ''}">Fixed</button>
+              <button data-type="variable" class="${c.type === 'variable' ? 'active' : ''}">Variable</button>
+            </div>
+            <span class="bc-spent num">${fmt(c.spent_cents)} spent</span>
+            <button class="bc-del" data-del aria-label="Delete category">🗑</button>
           </div>
-          <span class="bc-spent num">${fmt(c.spent_cents)} spent</span>
-          <button class="bc-del" data-del aria-label="Delete category">🗑</button>
-        </div>
-      </div>`,
-      )
+          <div class="bc-items">
+            ${items}
+            <button class="bi-add" data-item-add>+ ${hasItems ? 'add item' : 'add breakdown'}</button>
+          </div>
+        </div>`;
+      })
       .join('');
   }
 
@@ -608,12 +624,31 @@ function wireEvents() {
       const cents = parseDollarsToCents(e.target.value);
       if (cents != null && cents >= 0) saveCategory(id, { budget_cents: cents });
       else loadState();
+    } else if (e.target.classList.contains('bi-name')) {
+      const itemId = Number(e.target.closest('.bc-item').dataset.item);
+      const name = e.target.value.trim();
+      if (name) saveItem(itemId, { name });
+      else loadState();
+    } else if (e.target.classList.contains('bi-amt-input')) {
+      const itemId = Number(e.target.closest('.bc-item').dataset.item);
+      const cents = parseDollarsToCents(e.target.value);
+      if (cents != null && cents >= 0) saveItem(itemId, { amount_cents: cents });
+      else loadState();
     }
   });
   $('budgetCategories').addEventListener('click', (e) => {
     const row = e.target.closest('.bc-row');
     if (!row) return;
     const id = Number(row.dataset.id);
+    if (e.target.closest('button[data-item-add]')) {
+      addItem(id);
+      return;
+    }
+    const itemDel = e.target.closest('button[data-item-del]');
+    if (itemDel) {
+      deleteItem(Number(itemDel.closest('.bc-item').dataset.item));
+      return;
+    }
     const typeBtn = e.target.closest('button[data-type]');
     if (typeBtn) {
       saveCategory(id, { type: typeBtn.dataset.type });
@@ -674,6 +709,42 @@ async function deleteCategory(id) {
     toast('Category deleted');
   } catch (e) {
     toast(e.message, true); // e.g. 409 when transactions still use it
+  }
+}
+
+// ---- budget breakdown items ----
+async function addItem(categoryId) {
+  try {
+    const resp = await api(`/api/categories/${categoryId}/items${monthQS()}`, {
+      method: 'POST',
+      body: { name: 'New item', amount_cents: 0 },
+    });
+    applyState(resp.state);
+    const row = document.querySelector(`#budgetCategories .bc-row[data-id="${categoryId}"]`);
+    if (row) {
+      const names = row.querySelectorAll('.bc-item .bi-name');
+      const last = names[names.length - 1];
+      if (last) {
+        last.focus();
+        last.select();
+      }
+    }
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+async function saveItem(id, patch) {
+  try {
+    applyState((await api(`/api/items/${id}${monthQS()}`, { method: 'PUT', body: patch })).state);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+async function deleteItem(id) {
+  try {
+    applyState((await api(`/api/items/${id}${monthQS()}`, { method: 'DELETE' })).state);
+  } catch (e) {
+    toast(e.message, true);
   }
 }
 
