@@ -47,10 +47,16 @@ body {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
+  overflow-x: hidden; /* never let an oversized number cause horizontal jiggle */
 }
 
 body {
   min-height: 100vh;
+}
+
+/* lock the background while the log sheet is open (stops iOS scroll/jiggle) */
+body.sheet-open {
+  overflow: hidden;
 }
 
 .num {
@@ -68,6 +74,9 @@ button {
   cursor: pointer;
   border: none;
   background: none;
+  touch-action: manipulation; /* no double-tap zoom / gesture jitter on taps */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ---------- top bar (month nav) ---------- */
@@ -147,7 +156,7 @@ button {
   letter-spacing: 0.1em;
 }
 .hero-amount {
-  font-size: clamp(48px, 17vw, 72px);
+  font-size: clamp(36px, 13vw, 60px);
   font-weight: 700;
   line-height: 1.02;
   letter-spacing: -0.02em;
@@ -155,6 +164,10 @@ button {
   font-variant-numeric: tabular-nums;
   color: var(--brass);
   transition: color 0.4s ease;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hero.warn .hero-amount {
   color: var(--amber);
@@ -757,6 +770,7 @@ button {
   z-index: 40;
   background: rgba(0, 0, 0, 0.5);
   animation: fade 0.2s ease;
+  touch-action: none; /* don't scroll the page behind the sheet */
 }
 .sheet {
   position: fixed;
@@ -774,6 +788,8 @@ button {
   animation: slideup 0.26s cubic-bezier(0.2, 0.7, 0.2, 1);
   max-height: 94vh;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain; /* don't chain scroll to the page behind */
 }
 @keyframes slideup {
   from {
@@ -808,12 +824,15 @@ button {
 }
 .amount-display {
   text-align: center;
-  font-size: 52px;
+  font-size: clamp(34px, 12vw, 52px);
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   color: var(--brass);
   margin: 8px 0 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
 }
 .chips {
   display: flex;

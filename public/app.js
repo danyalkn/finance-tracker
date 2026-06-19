@@ -49,13 +49,21 @@ function fmt(cents, withCents = true) {
   const opts = {
     style: 'currency',
     currency,
+    // 'narrowSymbol' => "$" instead of iOS's wider "US$", which overflowed the hero
+    currencyDisplay: 'narrowSymbol',
     minimumFractionDigits: withCents ? 2 : 0,
     maximumFractionDigits: withCents ? 2 : 0,
   };
   try {
     return new Intl.NumberFormat(undefined, opts).format(cents / 100);
   } catch {
-    return `$${(cents / 100).toFixed(withCents ? 2 : 0)}`;
+    // older engines may not support narrowSymbol
+    try {
+      delete opts.currencyDisplay;
+      return new Intl.NumberFormat(undefined, opts).format(cents / 100);
+    } catch {
+      return `$${(cents / 100).toFixed(withCents ? 2 : 0)}`;
+    }
   }
 }
 function dollarsStr(cents) {
@@ -446,10 +454,12 @@ function openSheet() {
   updateEntryDisplay();
   $('logBackdrop').classList.remove('hidden');
   $('logSheet').classList.remove('hidden');
+  document.body.classList.add('sheet-open'); // lock background scroll (iOS jiggle)
 }
 function closeSheet() {
   $('logSheet').classList.add('hidden');
   $('logBackdrop').classList.add('hidden');
+  document.body.classList.remove('sheet-open');
 }
 function updateEntryDisplay() {
   $('amountDisplay').textContent = fmt(entryCents);
