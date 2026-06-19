@@ -2,8 +2,8 @@
 # `fly launch` will let you pick a unique app name + region and update this file.
 # Data lives in Supabase, so no Fly volume is needed.
 
-app = "finance-tracker"           # change to a unique name (fly launch prompts you)
-primary_region = "iad"            # pick the region nearest you (e.g. lhr, sjc, syd)
+app = "finance-tracker-danyal"
+primary_region = "ord"            # Chicago — close to the Supabase us-east-2 region
 
 [build]
 
