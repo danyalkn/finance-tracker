@@ -34,7 +34,10 @@ one iPhone, logging every purchase in a few taps and staying on a monthly budget
    Hand-drawn SVG, no chart library, works fully offline.
 4. **Budget** — edit income, savings goal, and each category (name, budget,
    fixed/variable, add/remove); live "income − budgets = left to save vs goal" summary;
-   CSV export and Google Sheets sync controls.
+   CSV export and Google Sheets sync controls. A category can also have a **breakdown**
+   of recurring line items (e.g. Living = rent + insurance + fuel + internet + phone) —
+   when items exist the category budget equals their sum, so you just tweak a line
+   month to month and everything downstream updates.
 
 Every purchase has an **amount**, a **Category**
 (Fun, Eating Out, Health, Misc., Groceries, Clothing, Living, Travel), an
@@ -183,6 +186,9 @@ return the recomputed `state` for that month so the UI updates in one round-trip
 | `POST /api/categories` | add `{ name, type, budget_cents }` |
 | `PUT /api/categories/:id` | edit name / type / budget / position |
 | `DELETE /api/categories/:id` | remove (blocked with 409 while transactions still reference it) |
+| `POST /api/categories/:id/items` | add a breakdown line `{ name, amount_cents }` (recomputes the budget) |
+| `PUT /api/items/:id` | edit a breakdown line `{ name?, amount_cents? }` |
+| `DELETE /api/items/:id` | remove a breakdown line |
 | `GET /api/export.csv` | **download all transactions** (date, amount, category, importance, note) |
 | `POST /api/sync/test` | send a test row to Google Sheets (if configured) |
 | `GET /api/auth` | `{ required, authed }` — whether a password is set and the caller is logged in |
@@ -213,6 +219,8 @@ settings(id=1, monthly_income_cents, savings_goal_cents, currency)
 categories(id, name, type['fixed'|'variable'], budget_cents, position)
 transactions(id, amount_cents, category_id -> categories.id,
              importance, note, created_at ISO)
+budget_items(id, category_id -> categories.id (ON DELETE CASCADE),
+             name, amount_cents, position)   -- optional per-category breakdown
 ```
 
 ---
