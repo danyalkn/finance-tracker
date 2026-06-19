@@ -16,14 +16,24 @@ const IMPORTANCE_LABELS = {
 };
 const IMPORTANCE_ORDER = ['essential', 'have_to_have', 'nice_to_have', 'shouldnt_have'];
 const IMPORTANCE_COLORS = {
-  essential: '#8FB07A',
-  have_to_have: '#E0B24A',
-  nice_to_have: '#6C93B8',
-  shouldnt_have: '#C2553D',
+  essential: '#8CC06A', // green = good
+  have_to_have: '#E0B24A', // brass
+  nice_to_have: '#6F9BD1', // blue
+  shouldnt_have: '#D9594A', // red = regret
 };
+// Distinct hues spread around the wheel so neighbours (and any two slices) are
+// easy to tell apart and bright enough to read on the dark charcoal background.
 const CATEGORY_COLORS = [
-  '#E0B24A', '#C2553D', '#8FB07A', '#6C93B8', '#C98A5E',
-  '#A77FB0', '#D4C26A', '#7FB0A8', '#B0746A', '#9AA86A',
+  '#E0B24A', // gold     (Living)
+  '#D86F52', // terracotta (Health)
+  '#4FA8A0', // teal     (Groceries)
+  '#6F9BD1', // blue     (Eating Out)
+  '#B481C4', // orchid   (Fun)
+  '#E08CA0', // pink     (Clothing)
+  '#9CC06A', // green    (Misc.)
+  '#E0954C', // orange   (Travel)
+  '#C9577F', // magenta
+  '#7C9C5A', // olive
 ];
 const MAX_ENTRY_CENTS = 99999999; // $999,999.99 ceiling for keypad entry
 
@@ -356,9 +366,10 @@ function buildPie(items, total) {
       const x2 = cx + r * Math.cos(a2);
       const y2 = cy + r * Math.sin(a2);
       const large = sweep > Math.PI ? 1 : 0;
+      // thin bg-coloured stroke separates adjacent slices for clarity
       svg += `<path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(
         2,
-      )} ${y2.toFixed(2)} Z" fill="${it.color}"/>`;
+      )} ${y2.toFixed(2)} Z" fill="${it.color}" stroke="#1A1714" stroke-width="2" stroke-linejoin="round"/>`;
       a = a2;
     }
   }
