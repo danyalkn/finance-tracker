@@ -37,10 +37,21 @@ const TXN_COLS = `t.id, t.amount_cents, t.category_id, c.name AS category_name,
 async function makePostgres() {
   const pgMod = await import('pg');
   const { Pool } = pgMod.default;
-  const local = /localhost|127\.0\.0\.1/.test(DATABASE_URL);
+  // Only treat the HOST as local — don't match 'localhost' appearing inside a
+  // password or other URL component.
+  let host = '';
+  try {
+    host = new URL(DATABASE_URL).hostname;
+  } catch {
+    /* malformed URL — treat as remote */
+  }
+  const local = host === 'localhost' || host === '127.0.0.1';
   const pool = new Pool({
     connectionString: DATABASE_URL,
     max: 5,
+    // Supabase requires TLS. rejectUnauthorized:false is INTENTIONAL (we don't ship
+    // Supabase's CA bundle) — encrypted in transit, but not cert-pinned. Do NOT
+    // delete this ssl object: without it pg would connect WITHOUT TLS.
     ssl: local || process.env.PGSSL_DISABLE ? false : { rejectUnauthorized: false },
   });
   const all = async (text, params) => (await pool.query(text, params)).rows;

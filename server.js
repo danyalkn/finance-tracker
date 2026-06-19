@@ -49,6 +49,19 @@ const SESSION_SECRET =
 const COOKIE = 'ft_auth';
 const SESSION_MS = 180 * 24 * 60 * 60 * 1000; // ~6 months
 
+// Fail closed: never boot an internet-exposed instance with auth disabled. A
+// forgotten/typo'd APP_PASSWORD would otherwise silently expose a world-writable
+// financial DB. The cloud path (Postgres) or a deploy indicator means "exposed".
+const EXPOSED =
+  db.kind === 'postgres' ||
+  Boolean(process.env.FLY_APP_NAME || process.env.RENDER) ||
+  process.env.NODE_ENV === 'production';
+if (!AUTH_REQUIRED && EXPOSED) {
+  console.error('\n✗ Refusing to start: APP_PASSWORD is not set in a deployed environment.');
+  console.error('  Set a password, e.g.:  fly secrets set APP_PASSWORD=your-strong-password\n');
+  process.exit(1);
+}
+
 const sign = (payload) => crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
 function makeToken() {
   const exp = String(Date.now() + SESSION_MS);
@@ -275,8 +288,12 @@ app.post('/api/logout', (req, res) => {
 });
 
 // ---- gate: everything below requires auth ----------------------------------
+// The match MUST be case-insensitive: Express routing is case-insensitive by
+// default, so a request to /API/state still reaches the lowercase /api/state
+// handler. A case-sensitive prefix check here would let /API/... slip past the
+// gate and leak/mutate data with no cookie.
 app.use((req, res, next) => {
-  if (!req.path.startsWith('/api/')) return next();
+  if (!/^\/api\//i.test(req.path)) return next();
   if (isAuthed(req)) return next();
   return res.status(401).json({ error: 'auth required', authRequired: true });
 });

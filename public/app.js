@@ -671,6 +671,9 @@ async function deleteCategory(id) {
 // AUTH (password gate)
 // ============================================================
 function showLock() {
+  // Idempotent: if several in-flight requests 401 at once, don't keep blanking
+  // and re-focusing the password field.
+  if (!$('lockScreen').classList.contains('hidden')) return;
   $('lockError').classList.add('hidden');
   $('lockScreen').classList.remove('hidden');
   const p = $('lockPassword');
@@ -733,7 +736,10 @@ async function init() {
   }
   let auth = { required: false, authed: true };
   try {
-    auth = await (await fetch('/api/auth', { credentials: 'same-origin' })).json();
+    const r = await fetch('/api/auth', { credentials: 'same-origin' });
+    // Only trust a real 200 answer. Offline, the SW returns a synthetic 503 whose
+    // body isn't an auth response — ignore it and fall through to loadState.
+    if (r.ok) auth = await r.json();
   } catch {
     /* offline: fall through to loadState, which will surface the error */
   }

@@ -195,6 +195,13 @@ When `APP_PASSWORD` is set, every endpoint except `/api/health`, `/api/auth`, an
 `httpOnly`, `SameSite=Lax`, `Secure` over HTTPS, and signed (HMAC) with a ~6-month
 expiry. The CSV download works because the browser sends the cookie automatically.
 
+> **Logging out / revoking access.** The "Log out" button clears the cookie on
+> *that* device. Tokens are stateless, so to invalidate **every** existing session
+> (lost phone, etc.) rotate the secret: `fly secrets set APP_PASSWORD='new'`
+> (or set a separate `SESSION_SECRET` and rotate that to revoke without changing the
+> password). The server also **refuses to start** in a deployed environment if
+> `APP_PASSWORD` is unset, so it can never accidentally boot wide-open.
+
 `importance` is one of `essential`, `have_to_have`, `nice_to_have`, `shouldnt_have`.
 `type` is `fixed` or `variable` — only **variable** budgets feed the home "left to
 spend" hero; fixed bills (rent, insurance…) are treated as already committed.

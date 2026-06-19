@@ -14,4 +14,7 @@ RUN npm ci --omit=dev
 COPY . .
 
 EXPOSE 3000
-CMD ["npm", "start"]
+# Production uses Postgres (DATABASE_URL), so node:sqlite is never loaded and the
+# --experimental-sqlite flag isn't needed here (that flag stays on `npm start` for
+# local SQLite dev). Running node directly keeps the logs clean.
+CMD ["node", "server.js"]
