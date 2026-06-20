@@ -169,12 +169,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.hero.warn .hero-amount {
-  color: var(--amber);
-}
-.hero.over .hero-amount {
-  color: var(--clay);
-}
+/* calm: the hero stays a single brass tone — no good/warn/over colour shifting */
 
 .bar {
   position: relative;
@@ -190,12 +185,6 @@ button {
   border-radius: 999px;
   background: var(--brass);
   transition: width 0.5s cubic-bezier(0.2, 0.7, 0.2, 1), background 0.4s ease;
-}
-.hero.warn .bar-fill {
-  background: var(--amber);
-}
-.hero.over .bar-fill {
-  background: var(--clay);
 }
 /* the pace marker sits ABOVE the fill so it's always visible */
 .bar-pace {
@@ -252,15 +241,8 @@ button {
   font-size: 12px;
   color: var(--muted);
 }
-.stat.regret .stat-value {
-  color: var(--clay);
-}
-.savings-ok .stat-value {
-  color: var(--sage);
-}
-.savings-short .stat-value {
-  color: var(--amber);
-}
+/* calm: savings / regret values use the default text colour, not green/amber/red.
+   The sub-labels ("over your goal", "money I regret") still carry the meaning. */
 
 /* ---------- category cards ---------- */
 .category-cards {
@@ -299,20 +281,10 @@ button {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: var(--brass);
+  background: rgba(224, 178, 74, 0.45); /* subdued brass — quiet across the grid */
 }
-.cat-card.warn .cat-remaining {
-  color: var(--amber);
-}
-.cat-card.warn .cat-bar > span {
-  background: var(--amber);
-}
-.cat-card.over .cat-remaining {
-  color: var(--clay);
-}
-.cat-card.over .cat-bar > span {
-  background: var(--clay);
-}
+/* calm: category cards stay neutral — remaining text default, bar a single tone.
+   Over-budget still reads from the negative number + full bar, just without colour. */
 
 /* ---------- recent list ---------- */
 .recent {
@@ -361,17 +333,12 @@ button {
   white-space: nowrap;
   border: 1px solid currentColor;
 }
-.imp-essential {
-  color: var(--sage);
-}
-.imp-have_to_have {
-  color: var(--brass);
-}
-.imp-nice_to_have {
-  color: var(--sky);
-}
+/* calm: all importance chips share one muted tone (label text still differs) */
+.imp-essential,
+.imp-have_to_have,
+.imp-nice_to_have,
 .imp-shouldnt_have {
-  color: var(--clay);
+  color: var(--muted);
 }
 .rec-del {
   width: 34px;
@@ -563,11 +530,10 @@ button {
   font-size: 13px;
   font-weight: 600;
 }
-.flag.ok {
-  color: var(--sage);
-}
+/* calm: budget summary flag stays muted, no green/amber */
+.flag.ok,
 .flag.short {
-  color: var(--amber);
+  color: var(--muted);
 }
 
 .budget-cats {

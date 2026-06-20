@@ -15,26 +15,9 @@ const IMPORTANCE_LABELS = {
   shouldnt_have: "Shouldn't Have",
 };
 const IMPORTANCE_ORDER = ['essential', 'have_to_have', 'nice_to_have', 'shouldnt_have'];
-const IMPORTANCE_COLORS = {
-  essential: '#8CC06A', // green = good
-  have_to_have: '#E0B24A', // brass
-  nice_to_have: '#6F9BD1', // blue
-  shouldnt_have: '#D9594A', // red = regret
-};
-// Distinct hues spread around the wheel so neighbours (and any two slices) are
-// easy to tell apart and bright enough to read on the dark charcoal background.
-const CATEGORY_COLORS = [
-  '#E0B24A', // gold     (Living)
-  '#D86F52', // terracotta (Health)
-  '#4FA8A0', // teal     (Groceries)
-  '#6F9BD1', // blue     (Eating Out)
-  '#B481C4', // orchid   (Fun)
-  '#E08CA0', // pink     (Clothing)
-  '#9CC06A', // green    (Misc.)
-  '#E0954C', // orange   (Travel)
-  '#C9577F', // magenta
-  '#7C9C5A', // olive
-];
+// One calm, warm ramp (light -> dark brass). Assigned by slice position so
+// neighbours always differ in lightness — quiet, not a rainbow.
+const CHART_RAMP = ['#EAD49A', '#DBBA6A', '#CBA248', '#B98B3C', '#A0773A', '#866234', '#6E5030'];
 const MAX_ENTRY_CENTS = 99999999; // $999,999.99 ceiling for keypad entry
 
 // ---------- app state ----------
@@ -295,16 +278,16 @@ function renderCharts() {
   let items;
   if (chartMode === 'category') {
     items = state.categories
-      .map((c, i) => ({ label: c.name, value: c.spent_cents, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }))
+      .map((c) => ({ label: c.name, value: c.spent_cents }))
       .filter((x) => x.value > 0)
       .sort((a, b) => b.value - a.value);
   } else {
-    items = IMPORTANCE_ORDER.map((k) => ({
-      label: IMPORTANCE_LABELS[k],
-      value: state.spentByImportance[k] || 0,
-      color: IMPORTANCE_COLORS[k],
-    })).filter((x) => x.value > 0);
+    items = IMPORTANCE_ORDER.map((k) => ({ label: IMPORTANCE_LABELS[k], value: state.spentByImportance[k] || 0 })).filter(
+      (x) => x.value > 0,
+    );
   }
+  // assign the calm ramp by final position so adjacent slices differ in lightness
+  items = items.map((x, i) => ({ ...x, color: CHART_RAMP[i % CHART_RAMP.length] }));
   const total = items.reduce((s, x) => s + x.value, 0);
 
   const pie = $('pie');
