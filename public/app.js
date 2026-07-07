@@ -15,9 +15,15 @@ const IMPORTANCE_LABELS = {
   shouldnt_have: "Shouldn't Have",
 };
 const IMPORTANCE_ORDER = ['essential', 'have_to_have', 'nice_to_have', 'shouldnt_have'];
-// One calm, warm ramp (light -> dark brass). Assigned by slice position so
-// neighbours always differ in lightness — quiet, not a rainbow.
-const CHART_RAMP = ['#EAD49A', '#DBBA6A', '#CBA248', '#B98B3C', '#A0773A', '#866234', '#6E5030'];
+// Validated categorical palette (via the dataviz skill's validator): distinct
+// hues so any two slices are easy to tell apart, one set per theme (each stepped
+// for its surface). Assigned by category index so a category keeps its colour.
+const CHART_PALETTE = {
+  dark: ['#3987e5', '#199e70', '#c98500', '#008300', '#9085e9', '#e66767', '#d55181', '#d95926'],
+  light: ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834'],
+};
+let theme = 'dark';
+const chartColors = () => CHART_PALETTE[theme] || CHART_PALETTE.dark;
 const MAX_ENTRY_CENTS = 99999999; // $999,999.99 ceiling for keypad entry
 
 // ---------- app state ----------
@@ -278,19 +284,20 @@ function renderHome() {
 }
 
 function renderCharts() {
+  const palette = chartColors();
   let items;
   if (chartMode === 'category') {
     items = state.categories
-      .map((c) => ({ label: c.name, value: c.spent_cents }))
+      .map((c, i) => ({ label: c.name, value: c.spent_cents, color: palette[i % palette.length] }))
       .filter((x) => x.value > 0)
       .sort((a, b) => b.value - a.value);
   } else {
-    items = IMPORTANCE_ORDER.map((k) => ({ label: IMPORTANCE_LABELS[k], value: state.spentByImportance[k] || 0 })).filter(
-      (x) => x.value > 0,
-    );
+    items = IMPORTANCE_ORDER.map((k, i) => ({
+      label: IMPORTANCE_LABELS[k],
+      value: state.spentByImportance[k] || 0,
+      color: palette[i % palette.length],
+    })).filter((x) => x.value > 0);
   }
-  // assign the calm ramp by final position so adjacent slices differ in lightness
-  items = items.map((x, i) => ({ ...x, color: CHART_RAMP[i % CHART_RAMP.length] }));
   const total = items.reduce((s, x) => s + x.value, 0);
 
   const pie = $('pie');
@@ -352,14 +359,14 @@ function buildPie(items, total) {
       const x2 = cx + r * Math.cos(a2);
       const y2 = cy + r * Math.sin(a2);
       const large = sweep > Math.PI ? 1 : 0;
-      // thin bg-coloured stroke separates adjacent slices for clarity
+      // slice separators come from CSS (#pie path stroke) so they follow the theme
       svg += `<path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(
         2,
-      )} ${y2.toFixed(2)} Z" fill="${it.color}" stroke="#1A1714" stroke-width="2" stroke-linejoin="round"/>`;
+      )} ${y2.toFixed(2)} Z" fill="${it.color}"/>`;
       a = a2;
     }
   }
-  svg += `<circle cx="${cx}" cy="${cy}" r="${hole}" fill="#1A1714"/>`;
+  svg += `<circle class="pie-hole" cx="${cx}" cy="${cy}" r="${hole}"/>`;
   return svg;
 }
 
@@ -746,6 +753,29 @@ async function deleteItem(id) {
 }
 
 // ============================================================
+// THEME (dark / light)
+// ============================================================
+function setTheme(t) {
+  theme = t === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  try {
+    localStorage.setItem('ft_theme', theme);
+  } catch {
+    /* private mode / eviction — just defaults next time */
+  }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = theme === 'light' ? '#f3eee4' : '#1a1714';
+  document
+    .querySelectorAll('#themeToggle .seg-btn')
+    .forEach((b) => b.classList.toggle('active', b.dataset.themeChoice === theme));
+  if (state) renderCharts(); // repaint the donut with this theme's palette
+}
+function initTheme() {
+  theme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  setTheme(theme);
+}
+
+// ============================================================
 // AUTH (password gate)
 // ============================================================
 function showLock() {
@@ -801,6 +831,9 @@ function wireAuth() {
   });
   $('logoutBtn').onclick = doLogout;
   $('loadRetry').onclick = loadState;
+  document.querySelectorAll('#themeToggle .seg-btn').forEach((b) => {
+    b.onclick = () => setTheme(b.dataset.themeChoice);
+  });
 }
 
 // ============================================================
@@ -809,6 +842,7 @@ function wireAuth() {
 async function init() {
   wireEvents();
   wireAuth();
+  initTheme();
   showScreen('home');
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

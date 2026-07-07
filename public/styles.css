@@ -15,7 +15,13 @@
   --muted: #9c9183;
   --muted-2: #6f665b;
 
-  --brass: #e0b24a;
+  --brass: #e0b24a; /* button/fill background — stays bright so dark text reads */
+  --accent: #e0b24a; /* text accent (hero number, active tab) — readable on the bg */
+  --on-brass: #2a1c05; /* text on a brass button */
+  --bar-bg: rgba(26, 23, 20, 0.92); /* translucent top/bottom bars */
+  --track: rgba(0, 0, 0, 0.35); /* progress-bar tracks */
+  --cat-fill: rgba(224, 178, 74, 0.45); /* subdued category bar fill */
+
   --amber: #d98a3a;
   --clay: #c2553d;
   --sage: #8fb07a;
@@ -30,6 +36,25 @@
 
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
     system-ui, sans-serif;
+}
+
+/* ---- light mode (warm cream, not stark white) ---- */
+:root[data-theme="light"] {
+  --bg: #f3eee4;
+  --bg-2: #eae3d5;
+  --surface: #fbf7ef;
+  --surface-2: #efe8da;
+  --line: rgba(0, 0, 0, 0.1);
+  --text: #2a241c;
+  --muted: #7a7060;
+  --muted-2: #a99e8c;
+
+  --brass: #dca63e;
+  --accent: #9a6e16; /* deep bronze — the hero number reads on cream */
+  --on-brass: #2a1c05;
+  --bar-bg: rgba(243, 238, 228, 0.9);
+  --track: rgba(0, 0, 0, 0.1);
+  --cat-fill: rgba(154, 110, 22, 0.32);
 }
 
 * {
@@ -88,7 +113,7 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: calc(var(--safe-top) + 10px) 16px 10px;
-  background: linear-gradient(var(--bg), rgba(26, 23, 20, 0.86));
+  background: var(--bar-bg);
   backdrop-filter: blur(8px);
 }
 .month-label {
@@ -162,7 +187,7 @@ button {
   letter-spacing: -0.02em;
   margin: 6px 0 18px;
   font-variant-numeric: tabular-nums;
-  color: var(--brass);
+  color: var(--accent);
   transition: color 0.4s ease;
   white-space: nowrap;
   max-width: 100%;
@@ -174,7 +199,7 @@ button {
 .bar {
   position: relative;
   height: 12px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--track);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -273,7 +298,7 @@ button {
 .cat-bar {
   height: 6px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--track);
   margin-top: 10px;
   overflow: hidden;
 }
@@ -281,7 +306,7 @@ button {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: rgba(224, 178, 74, 0.45); /* subdued brass — quiet across the grid */
+  background: var(--cat-fill); /* subdued brass — quiet across the grid */
 }
 /* calm: category cards stay neutral — remaining text default, bar a single tone.
    Over-budget still reads from the negative number + full bar, just without colour. */
@@ -416,6 +441,15 @@ button {
 }
 #pie {
   display: block;
+}
+/* slice separators + donut hole follow the theme background */
+#pie path {
+  stroke: var(--bg);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+#pie .pie-hole {
+  fill: var(--bg);
 }
 .chart-center {
   position: absolute;
@@ -706,7 +740,7 @@ button {
   align-self: flex-start;
   font-size: 13px;
   font-weight: 600;
-  color: var(--brass);
+  color: var(--accent);
   padding: 6px 4px;
 }
 
@@ -780,7 +814,7 @@ button {
   align-items: stretch;
   gap: 4px;
   padding: 8px 10px calc(8px + var(--safe-bottom));
-  background: rgba(26, 23, 20, 0.92);
+  background: var(--bar-bg);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
 }
@@ -800,7 +834,7 @@ button {
   line-height: 1;
 }
 .tab.active {
-  color: var(--brass);
+  color: var(--accent);
 }
 .tab.log {
   background: var(--brass);
@@ -867,7 +901,7 @@ button {
   padding: 6px 2px;
 }
 .link-btn.save {
-  color: var(--brass);
+  color: var(--accent);
   font-weight: 700;
 }
 .link-btn:disabled {

@@ -19,6 +19,13 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <!-- apply saved theme before first paint (no flash) -->
+    <script>
+      try {
+        var t = localStorage.getItem('ft_theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -122,6 +129,12 @@
           <button id="addCategoryBtn" class="ghost-btn">+ Add</button>
         </div>
         <div id="budgetCategories" class="budget-cats"></div>
+
+        <h2 class="section-title">Appearance</h2>
+        <div class="seg" id="themeToggle">
+          <button class="seg-btn" data-theme-choice="dark">Dark</button>
+          <button class="seg-btn" data-theme-choice="light">Light</button>
+        </div>
 
         <h2 class="section-title">Data</h2>
         <div class="data-controls">
