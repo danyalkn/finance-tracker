@@ -957,6 +957,30 @@ button {
   background: var(--amber);
 }
 
+/* ---------- load-error banner (e.g. DB paused) ---------- */
+.load-error {
+  margin: 12px 0 4px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.load-retry {
+  align-self: flex-start;
+  background: var(--brass);
+  color: #2a1c05;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 9px 18px;
+  border-radius: 10px;
+}
+
 /* ---------- lock screen ---------- */
 .lock {
   position: fixed;

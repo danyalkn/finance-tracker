@@ -367,6 +367,15 @@ export async function createDb() {
     );
   }
   const db = DATABASE_URL ? await makePostgres() : await makeSqlite();
-  await db.init();
+  db.initialized = false;
+  // Best-effort init: if the DB is unreachable at boot (e.g. a paused Supabase
+  // free project), start the server anyway and surface a clear per-request error,
+  // then retry on demand — don't crash-loop the whole app over a sleeping DB.
+  try {
+    await db.init();
+    db.initialized = true;
+  } catch (e) {
+    console.error('⚠  Database not reachable at startup (will retry on demand):', e.message);
+  }
   return db;
 }

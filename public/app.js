@@ -149,7 +149,7 @@ async function api(path, opts = {}) {
   } catch {
     /* non-JSON */
   }
-  if (!res.ok) throw new Error(data.error || (data.offline ? "You're offline." : `Error ${res.status}`));
+  if (!res.ok) throw new Error(data.message || data.error || (data.offline ? "You're offline." : `Error ${res.status}`));
   return data;
 }
 const monthQS = () => `?month=${encodeURIComponent(selectedMonth)}`;
@@ -163,8 +163,11 @@ function applyState(newState) {
 async function loadState() {
   try {
     applyState(await api(`/api/state${monthQS()}`));
+    $('loadError').classList.add('hidden');
   } catch (e) {
-    toast(e.message, true);
+    // a persistent banner (not a fleeting toast) for a real outage like a paused DB
+    $('loadErrorMsg').textContent = e.message;
+    $('loadError').classList.remove('hidden');
   }
 }
 
@@ -797,6 +800,7 @@ function wireAuth() {
     if (e.key === 'Enter') unlock();
   });
   $('logoutBtn').onclick = doLogout;
+  $('loadRetry').onclick = loadState;
 }
 
 // ============================================================

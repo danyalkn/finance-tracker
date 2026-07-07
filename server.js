@@ -17,10 +17,32 @@ let db; // chooses Postgres (DATABASE_URL) or SQLite, runs migrations + seed
 try {
   db = await createDb();
 } catch (e) {
-  console.error('\n✗ Could not connect to the database.');
-  console.error('  Check DATABASE_URL (your Supabase connection string) and that the DB is reachable.');
-  console.error('  Detail:', e.message, '\n');
+  console.error('\n✗ Failed to initialize the data layer:', e.message, '\n');
   process.exit(1);
+}
+
+// If the DB was unreachable at boot, retry init lazily (cheap no-op once ready).
+async function ensureDb() {
+  if (db.initialized) return;
+  try {
+    await db.init();
+    db.initialized = true;
+  } catch {
+    /* still unreachable — the request below will surface a clear error */
+  }
+}
+
+// A DB/network failure (vs a real 500) — most often a paused Supabase project.
+function isDbDown(e) {
+  const code = e && e.code;
+  const msg = String((e && e.message) || '');
+  return (
+    ['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNRESET', 'EPIPE',
+      '57P01', '57P03', '08006', '08001', '08003', '08004', 'XX000', '53300'].includes(code) ||
+    /tenant.*not found|connection terminated|terminating connection|server closed the connection|connection to server|ECONNREFUSED|getaddrinfo|SASL/i.test(
+      msg,
+    )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +173,7 @@ function normalizeCreatedAt(value) {
 // State (the big read used by every screen)
 // ---------------------------------------------------------------------------
 async function getState(month) {
+  await ensureDb();
   const [settings, categories, txns, allItems] = await Promise.all([
     db.getSettings(),
     db.listCategories(),
@@ -262,6 +285,16 @@ const h = (fn) => (req, res) => {
 };
 function fail(res, e) {
   if (e instanceof ApiError) return res.status(e.status).json({ error: e.message });
+  if (isDbDown(e)) {
+    console.error('Database unavailable:', e.message);
+    return res.status(503).json({
+      error: 'DB_UNAVAILABLE',
+      dbDown: true,
+      message:
+        "Can't reach the database. On Supabase's free tier it pauses after inactivity — " +
+        'open your Supabase dashboard and resume the project, then reload.',
+    });
+  }
   console.error('Unhandled error:', e);
   return res.status(500).json({ error: 'Internal server error' });
 }
@@ -564,6 +597,20 @@ const server = app.listen(PORT, () => {
   console.log(`Auth: ${AUTH_REQUIRED ? 'password required' : 'OFF (no APP_PASSWORD set)'}`);
   console.log(`Google Sheets sync: ${syncEnabled() ? 'ENABLED' : 'off (CSV export only)'}`);
 });
+
+// Keep-alive: touch the DB every few hours so a Supabase free project doesn't
+// pause from inactivity (and recover init if it was down at boot). The Fly app
+// is always-on, so this runs for the life of the machine.
+if (db.kind === 'postgres') {
+  setInterval(
+    () => {
+      ensureDb()
+        .then(() => db.getSettings())
+        .catch((e) => console.warn('keep-alive DB ping failed:', e.message));
+    },
+    6 * 60 * 60 * 1000,
+  );
+}
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
