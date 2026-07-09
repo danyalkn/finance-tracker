@@ -191,6 +191,11 @@ async function makePostgres() {
            FROM transactions t JOIN categories c ON c.id = t.category_id
           ORDER BY t.created_at ASC, t.id ASC`,
       ),
+    listAllTransactionsFull: () =>
+      all(
+        `SELECT ${TXN_COLS} FROM transactions t JOIN categories c ON c.id = t.category_id
+          ORDER BY t.created_at DESC, t.id DESC LIMIT 500`,
+      ),
     categoryName: async (id) => {
       const r = await one('SELECT name FROM categories WHERE id = $1', [id]);
       return r ? r.name : null;
@@ -333,6 +338,13 @@ async function makeSqlite() {
           `SELECT t.created_at, t.amount_cents, c.name AS category, t.importance, t.note
              FROM transactions t JOIN categories c ON c.id = t.category_id
             ORDER BY t.created_at ASC, t.id ASC`,
+        )
+        .all(),
+    listAllTransactionsFull: async () =>
+      db
+        .prepare(
+          `SELECT ${TXN_COLS} FROM transactions t JOIN categories c ON c.id = t.category_id
+            ORDER BY t.created_at DESC, t.id DESC LIMIT 500`,
         )
         .all(),
     categoryName: async (id) => {

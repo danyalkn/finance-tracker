@@ -32,6 +32,7 @@ let currency = 'USD';
 let selectedMonth = localMonthStr();
 let chartMode = 'category';
 let pendingDeleteId = null; // recent-list inline delete confirmation
+let filterCategoryId = null; // home transaction-list category filter (null = all)
 
 // ---------- log-sheet state ----------
 let entryCents = 0;
@@ -97,6 +98,12 @@ function localISO(d = new Date()) {
 function monthLabel(month) {
   const [y, m] = month.split('-').map(Number);
   return new Date(y, m - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' });
+}
+// short local date for a transaction row, e.g. "Jul 7"
+function shortDate(iso) {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 function daysInMonth(month) {
   const [y, m] = month.split('-').map(Number);
@@ -235,7 +242,7 @@ function renderHome() {
   // regret
   $('regretValue').textContent = fmt(d.shouldntHave);
 
-  // category cards (variable only)
+  // category cards (variable only) — tapping one filters the transaction list
   const cardsEl = $('categoryCards');
   const variableCats = state.categories.filter((c) => c.type === 'variable');
   cardsEl.innerHTML = variableCats
@@ -243,7 +250,8 @@ function renderHome() {
       const remaining = c.budget_cents - c.spent_cents;
       const cst = statusOf(c.spent_cents, c.budget_cents, pace);
       const w = c.budget_cents > 0 ? clamp01(c.spent_cents / c.budget_cents) * 100 : c.spent_cents > 0 ? 100 : 0;
-      return `<div class="cat-card ${cst}">
+      const active = filterCategoryId === c.id ? ' active' : '';
+      return `<div class="cat-card ${cst}${active}" data-cat-id="${c.id}">
         <div class="cat-name">${escapeHtml(c.name)}</div>
         <div class="cat-remaining num">${fmt(remaining)}</div>
         <div class="cat-of">left of ${fmt(c.budget_cents)}</div>
@@ -252,28 +260,41 @@ function renderHome() {
     })
     .join('');
 
-  // recent purchases
-  const list = $('recentList');
-  const txns = state.transactions;
-  if (txns.length === 0) {
-    list.innerHTML = '';
-    $('recentEmpty').classList.remove('hidden');
+  // all transactions (every month, newest first), optionally filtered by category
+  const all = state.allTransactions || [];
+  const filtered = filterCategoryId ? all.filter((t) => t.category_id === filterCategoryId) : all;
+
+  const pill = $('txnFilterClear');
+  if (filterCategoryId) {
+    const cat = state.categories.find((c) => c.id === filterCategoryId);
+    $('txnFilterName').textContent = cat ? cat.name : 'Filtered';
+    pill.classList.remove('hidden');
   } else {
-    $('recentEmpty').classList.add('hidden');
-    list.innerHTML = txns
+    pill.classList.add('hidden');
+  }
+
+  const list = $('recentList');
+  const empty = $('recentEmpty');
+  if (filtered.length === 0) {
+    list.innerHTML = '';
+    empty.textContent = filterCategoryId ? 'No transactions in this category.' : 'No transactions yet.';
+    empty.classList.remove('hidden');
+  } else {
+    empty.classList.add('hidden');
+    list.innerHTML = filtered
       .map((t) => {
         const controls =
           pendingDeleteId === t.id
             ? `<div class="rec-confirm"><button class="yes" data-action="confirm" data-id="${t.id}">Delete</button><button class="no" data-action="cancel">Cancel</button></div>`
             : `<button class="rec-del" data-action="ask" data-id="${t.id}" aria-label="Delete">✕</button>`;
-        const note = t.note ? `<span class="rec-note">${escapeHtml(t.note)}</span>` : '';
+        const note = t.note ? ` · ${escapeHtml(t.note)}` : '';
         return `<li>
           <div class="rec-main">
             <div class="rec-top">
               <span class="rec-cat">${escapeHtml(t.category_name)}</span>
               <span class="imp-chip imp-${t.importance}">${IMPORTANCE_LABELS[t.importance]}</span>
             </div>
-            ${note}
+            <div class="rec-sub"><span class="rec-date">${shortDate(t.created_at)}</span>${note}</div>
           </div>
           <span class="rec-amount num">${fmt(t.amount_cents)}</span>
           ${controls}
@@ -517,6 +538,7 @@ async function savePurchase() {
       },
     });
     selectedMonth = logMonth; // only switch the viewed month after a successful save
+    filterCategoryId = null; // clear any category filter so the new entry is visible
     applyState(resp.state);
     closeSheet();
     showScreen('home');
@@ -585,6 +607,20 @@ function wireEvents() {
     document.querySelectorAll('#chartToggle .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
     renderCharts();
   });
+
+  // tap a category card to filter the transaction list (tap again to clear)
+  $('categoryCards').addEventListener('click', (e) => {
+    const card = e.target.closest('.cat-card[data-cat-id]');
+    if (!card) return;
+    const id = Number(card.dataset.catId);
+    filterCategoryId = filterCategoryId === id ? null : id;
+    pendingDeleteId = null;
+    renderHome();
+  });
+  $('txnFilterClear').onclick = () => {
+    filterCategoryId = null;
+    renderHome();
+  };
 
   // recent list delete (event delegation)
   $('recentList').addEventListener('click', async (e) => {

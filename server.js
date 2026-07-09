@@ -174,11 +174,12 @@ function normalizeCreatedAt(value) {
 // ---------------------------------------------------------------------------
 async function getState(month) {
   await ensureDb();
-  const [settings, categories, txns, allItems] = await Promise.all([
+  const [settings, categories, txns, allItems, allTransactions] = await Promise.all([
     db.getSettings(),
     db.listCategories(),
     db.listTransactionsForMonth(month),
     db.listItems(),
+    db.listAllTransactionsFull(),
   ]);
 
   const itemsByCategory = {};
@@ -211,6 +212,7 @@ async function getState(month) {
     settings,
     categories: cats,
     transactions: txns,
+    allTransactions,
     spentByCategory,
     spentByImportance,
     derived: {

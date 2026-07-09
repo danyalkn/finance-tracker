@@ -88,12 +88,20 @@
           </div>
         </div>
 
-        <h2 class="section-title">Categories</h2>
+        <div class="section-head">
+          <h2 class="section-title">Categories</h2>
+          <span class="hint">tap to filter ↓</span>
+        </div>
         <div id="categoryCards" class="category-cards"></div>
 
-        <h2 class="section-title">Recent purchases</h2>
+        <div class="section-head">
+          <h2 class="section-title">All transactions</h2>
+          <button id="txnFilterClear" class="filter-pill hidden">
+            <span id="txnFilterName"></span> ✕
+          </button>
+        </div>
         <ul id="recentList" class="recent"></ul>
-        <div id="recentEmpty" class="empty hidden">No purchases logged this month yet.</div>
+        <div id="recentEmpty" class="empty hidden">No transactions yet.</div>
       </section>
 
       <!-- ============ CHARTS ============ -->
