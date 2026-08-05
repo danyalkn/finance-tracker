@@ -260,9 +260,12 @@ function renderHome() {
     })
     .join('');
 
-  // all transactions (every month, newest first), optionally filtered by category
-  const all = state.allTransactions || [];
-  const filtered = filterCategoryId ? all.filter((t) => t.category_id === filterCategoryId) : all;
+  // transactions for the SELECTED month (use the ‹ › month nav to change month),
+  // optionally narrowed to one category by tapping its card
+  const monthTxns = state.transactions || [];
+  const filtered = filterCategoryId ? monthTxns.filter((t) => t.category_id === filterCategoryId) : monthTxns;
+
+  $('txnHeading').textContent = `${monthLabel(selectedMonth)} · ${filtered.length}`;
 
   const pill = $('txnFilterClear');
   if (filterCategoryId) {
@@ -277,7 +280,9 @@ function renderHome() {
   const empty = $('recentEmpty');
   if (filtered.length === 0) {
     list.innerHTML = '';
-    empty.textContent = filterCategoryId ? 'No transactions in this category.' : 'No transactions yet.';
+    empty.textContent = filterCategoryId
+      ? `Nothing in this category for ${monthLabel(selectedMonth)}.`
+      : `No purchases logged in ${monthLabel(selectedMonth)} yet.`;
     empty.classList.remove('hidden');
   } else {
     empty.classList.add('hidden');
@@ -789,6 +794,139 @@ async function deleteItem(id) {
 }
 
 // ============================================================
+// PUSH NOTIFICATIONS (nightly reminder)
+// ============================================================
+let pushStatus = null;
+
+const urlBase64ToUint8Array = (base64String) => {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+};
+
+// iOS only allows Web Push when the PWA is installed to the Home Screen.
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+async function currentSubscription() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+
+async function renderPushBox() {
+  const box = $('pushBox');
+  if (!box) return;
+  const hour = pushStatus && typeof pushStatus.hour === 'number' ? pushStatus.hour : 22;
+  const timeLabel = `${((hour + 11) % 12) + 1}:00 ${hour >= 12 ? 'PM' : 'AM'}`;
+
+  if (!pushStatus || !pushStatus.enabled) {
+    box.innerHTML = `<div class="sync-status"><span class="dot off"></span>Nightly reminder unavailable</div>
+      Push isn't configured on the server (VAPID keys missing).`;
+    return;
+  }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    box.innerHTML = `<div class="sync-status"><span class="dot off"></span>Not supported here</div>
+      This browser can't do notifications. On iPhone, open the app from your Home Screen icon.`;
+    return;
+  }
+  if (isIOS() && !isStandalone()) {
+    box.innerHTML = `<div class="sync-status"><span class="dot off"></span>Add to Home Screen first</div>
+      On iPhone, notifications only work from the installed app: tap <b>Share → Add to Home Screen</b>,
+      then open it from that icon and come back here.`;
+    return;
+  }
+
+  const sub = await currentSubscription();
+  const denied = Notification.permission === 'denied';
+  if (sub) {
+    box.innerHTML = `<div class="sync-status"><span class="dot on"></span>Nightly reminder is ON</div>
+      You'll get a nudge at ${timeLabel} to log the day's purchases.
+      <div class="push-actions">
+        <button class="ghost-btn" id="pushTestBtn">Send test</button>
+        <button class="ghost-btn" id="pushOffBtn">Turn off</button>
+      </div>`;
+    $('pushTestBtn').onclick = pushTest;
+    $('pushOffBtn').onclick = disablePush;
+  } else if (denied) {
+    box.innerHTML = `<div class="sync-status"><span class="dot off"></span>Notifications blocked</div>
+      You denied notifications for this app. Enable them in iPhone <b>Settings → Notifications →
+      Finance Tracker</b>, then reopen the app.`;
+  } else {
+    box.innerHTML = `<div class="sync-status"><span class="dot off"></span>Nightly reminder is OFF</div>
+      Get a reminder at ${timeLabel} each night to log the day's purchases.
+      <div class="push-actions"><button class="ghost-btn" id="pushOnBtn">Turn on reminders</button></div>`;
+    $('pushOnBtn').onclick = enablePush;
+  }
+}
+
+async function loadPushStatus() {
+  try {
+    pushStatus = await api('/api/push/status');
+  } catch {
+    pushStatus = null;
+  }
+  renderPushBox();
+}
+
+async function enablePush() {
+  try {
+    const perm = await Notification.requestPermission(); // must be called from a user gesture
+    if (perm !== 'granted') {
+      toast(perm === 'denied' ? 'Notifications blocked' : 'Notifications not enabled', true);
+      renderPushBox();
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(pushStatus.publicKey),
+      });
+    }
+    const json = sub.toJSON();
+    await api('/api/push/subscribe', {
+      method: 'POST',
+      body: {
+        endpoint: sub.endpoint,
+        keys: json.keys,
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+    });
+    toast('Reminders on ✓');
+  } catch (e) {
+    toast(e.message || 'Could not enable notifications', true);
+  }
+  renderPushBox();
+}
+
+async function disablePush() {
+  try {
+    const sub = await currentSubscription();
+    if (sub) {
+      await api('/api/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } });
+      await sub.unsubscribe();
+    }
+    toast('Reminders off');
+  } catch (e) {
+    toast(e.message, true);
+  }
+  renderPushBox();
+}
+
+async function pushTest() {
+  try {
+    const r = await api('/api/push/test', { method: 'POST', body: {} });
+    toast(r.sent ? 'Test sent ✓' : 'No devices subscribed', !r.sent);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// ============================================================
 // THEME (dark / light)
 // ============================================================
 function setTheme(t) {
@@ -845,6 +983,7 @@ async function unlock() {
     }
     hideLock();
     await loadState();
+    loadPushStatus();
   } catch {
     $('lockError').textContent = "Couldn't reach the server.";
     $('lockError').classList.remove('hidden');
@@ -897,6 +1036,23 @@ async function init() {
     showLock();
   } else {
     loadState();
+    loadPushStatus();
+  }
+
+  // tapping the nightly notification opens the log sheet straight away
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'open-log' && state) openSheet();
+    });
+  }
+  if (new URLSearchParams(location.search).get('log') === '1') {
+    const openWhenReady = setInterval(() => {
+      if (state) {
+        clearInterval(openWhenReady);
+        openSheet();
+      }
+    }, 200);
+    setTimeout(() => clearInterval(openWhenReady), 6000);
   }
 }
 init();

@@ -9,6 +9,9 @@ primary_region = "ord"            # Chicago — close to the Supabase us-east-2 
 
 [env]
   PORT = "3000"
+  # nightly "log today's purchases" reminder — local hour + timezone
+  REMINDER_HOUR = "22"
+  REMINDER_TZ = "America/Toronto"
 
 [http_service]
   internal_port = 3000

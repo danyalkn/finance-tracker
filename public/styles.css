@@ -832,6 +832,12 @@ button {
 .dot.off {
   background: var(--muted-2);
 }
+.push-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
 .version {
   text-align: center;
   color: var(--muted-2);

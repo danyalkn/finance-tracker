@@ -105,6 +105,17 @@ async function makePostgres() {
         amount_cents INTEGER NOT NULL DEFAULT 0,
         position     INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        endpoint   TEXT PRIMARY KEY,
+        p256dh     TEXT NOT NULL,
+        auth       TEXT NOT NULL,
+        tz         TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS reminder_state (
+        id        INTEGER PRIMARY KEY CHECK (id = 1),
+        last_sent TEXT
+      );
       CREATE INDEX IF NOT EXISTS idx_txn_created ON transactions(created_at);
       CREATE INDEX IF NOT EXISTS idx_txn_category ON transactions(category_id);
       CREATE INDEX IF NOT EXISTS idx_item_category ON budget_items(category_id);
@@ -191,15 +202,32 @@ async function makePostgres() {
            FROM transactions t JOIN categories c ON c.id = t.category_id
           ORDER BY t.created_at ASC, t.id ASC`,
       ),
-    listAllTransactionsFull: () =>
-      all(
-        `SELECT ${TXN_COLS} FROM transactions t JOIN categories c ON c.id = t.category_id
-          ORDER BY t.created_at DESC, t.id DESC LIMIT 500`,
-      ),
     categoryName: async (id) => {
       const r = await one('SELECT name FROM categories WHERE id = $1', [id]);
       return r ? r.name : null;
     },
+    // ---- push notifications ----
+    listSubscriptions: () => all('SELECT endpoint, p256dh, auth, tz FROM push_subscriptions'),
+    countSubscriptions: async () =>
+      Number((await one('SELECT COUNT(*)::int AS n FROM push_subscriptions')).n),
+    upsertSubscription: (s) =>
+      run(
+        `INSERT INTO push_subscriptions (endpoint, p256dh, auth, tz, created_at)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (endpoint) DO UPDATE SET p256dh=EXCLUDED.p256dh, auth=EXCLUDED.auth, tz=EXCLUDED.tz`,
+        [s.endpoint, s.p256dh, s.auth, s.tz, s.created_at],
+      ),
+    deleteSubscription: (endpoint) => run('DELETE FROM push_subscriptions WHERE endpoint = $1', [endpoint]),
+    getReminderLastSent: async () => {
+      const r = await one('SELECT last_sent FROM reminder_state WHERE id = 1');
+      return r ? r.last_sent : null;
+    },
+    setReminderLastSent: (day) =>
+      run(
+        `INSERT INTO reminder_state (id, last_sent) VALUES (1,$1)
+         ON CONFLICT (id) DO UPDATE SET last_sent=EXCLUDED.last_sent`,
+        [day],
+      ),
     // ---- budget breakdown items ----
     listItems: () =>
       all('SELECT id, category_id, name, amount_cents, position FROM budget_items ORDER BY category_id, position, id'),
@@ -260,6 +288,17 @@ async function makeSqlite() {
         name TEXT NOT NULL,
         amount_cents INTEGER NOT NULL DEFAULT 0,
         position INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        endpoint   TEXT PRIMARY KEY,
+        p256dh     TEXT NOT NULL,
+        auth       TEXT NOT NULL,
+        tz         TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS reminder_state (
+        id        INTEGER PRIMARY KEY CHECK (id = 1),
+        last_sent TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_txn_created ON transactions(created_at);
       CREATE INDEX IF NOT EXISTS idx_txn_category ON transactions(category_id);
@@ -340,17 +379,34 @@ async function makeSqlite() {
             ORDER BY t.created_at ASC, t.id ASC`,
         )
         .all(),
-    listAllTransactionsFull: async () =>
-      db
-        .prepare(
-          `SELECT ${TXN_COLS} FROM transactions t JOIN categories c ON c.id = t.category_id
-            ORDER BY t.created_at DESC, t.id DESC LIMIT 500`,
-        )
-        .all(),
     categoryName: async (id) => {
       const r = db.prepare('SELECT name FROM categories WHERE id = ?').get(id);
       return r ? r.name : null;
     },
+    // ---- push notifications ----
+    listSubscriptions: async () => db.prepare('SELECT endpoint, p256dh, auth, tz FROM push_subscriptions').all(),
+    countSubscriptions: async () => db.prepare('SELECT COUNT(*) AS n FROM push_subscriptions').get().n,
+    upsertSubscription: async (s) =>
+      db
+        .prepare(
+          `INSERT INTO push_subscriptions (endpoint, p256dh, auth, tz, created_at)
+           VALUES (?,?,?,?,?)
+           ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, tz=excluded.tz`,
+        )
+        .run(s.endpoint, s.p256dh, s.auth, s.tz, s.created_at),
+    deleteSubscription: async (endpoint) =>
+      db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint),
+    getReminderLastSent: async () => {
+      const r = db.prepare('SELECT last_sent FROM reminder_state WHERE id = 1').get();
+      return r ? r.last_sent : null;
+    },
+    setReminderLastSent: async (day) =>
+      db
+        .prepare(
+          `INSERT INTO reminder_state (id, last_sent) VALUES (1,?)
+           ON CONFLICT(id) DO UPDATE SET last_sent=excluded.last_sent`,
+        )
+        .run(day),
     // ---- budget breakdown items ----
     listItems: async () =>
       db.prepare('SELECT id, category_id, name, amount_cents, position FROM budget_items ORDER BY category_id, position, id').all(),

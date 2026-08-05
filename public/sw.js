@@ -2,7 +2,7 @@
 // Data is NEVER cached: /api/* is always network-only (the DB is the source
 // of truth). Bump CACHE_VERSION when the shell file list changes.
 
-const CACHE_VERSION = 'ft-shell-v1';
+const CACHE_VERSION = 'ft-shell-v2';
 const SHELL = [
   '/',
   '/index.html',
@@ -84,6 +84,44 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => cached);
       return cached || network;
+    }),
+  );
+});
+
+// ---- push notifications (nightly reminder) ---------------------------------
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data && event.data.text() };
+  }
+  const title = data.title || 'Finance Tracker';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "Log today's purchases.",
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: data.tag || 'ft-reminder',
+      renotify: true,
+      data: { url: data.url || '/' },
+    }),
+  );
+});
+
+// Tapping the notification focuses the app (or opens it), on the log screen.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if (client.url.indexOf(self.location.origin) === 0 && 'focus' in client) {
+          client.postMessage({ type: 'open-log' });
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
     }),
   );
 });

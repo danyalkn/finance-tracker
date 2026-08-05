@@ -5,6 +5,7 @@
 
 import express from 'express';
 import crypto from 'node:crypto';
+import webpush from 'web-push';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDb } from './db.js';
@@ -110,6 +111,108 @@ function parseCookies(req) {
 const isAuthed = (req) => !AUTH_REQUIRED || verifyToken(parseCookies(req)[COOKIE]);
 
 // ---------------------------------------------------------------------------
+// Push notifications (nightly "log today's purchases" reminder)
+// Needs VAPID keys: VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (see README).
+// ---------------------------------------------------------------------------
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
+const PUSH_ENABLED = Boolean(VAPID_PUBLIC && VAPID_PRIVATE);
+// Local hour (0-23) the reminder fires, and the timezone it's measured in.
+const REMINDER_HOUR = Number(process.env.REMINDER_HOUR ?? 22);
+const REMINDER_TZ = process.env.REMINDER_TZ || 'America/Toronto';
+
+if (PUSH_ENABLED) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:danyal0726@gmail.com',
+    VAPID_PUBLIC,
+    VAPID_PRIVATE,
+  );
+}
+
+// "now" in a given IANA timezone, as {day:'YYYY-MM-DD', hour:Number}
+function localNow(tz) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  return { day: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) % 24 };
+}
+
+async function sendPush(sub, payload) {
+  try {
+    await webpush.sendNotification(
+      { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+      JSON.stringify(payload),
+    );
+    return { ok: true };
+  } catch (e) {
+    // 404/410 => the subscription is dead (app deleted / push service dropped it)
+    if (e.statusCode === 404 || e.statusCode === 410) {
+      await db.deleteSubscription(sub.endpoint).catch(() => {});
+      return { ok: false, gone: true };
+    }
+    return { ok: false, error: String(e.statusCode || e.message || e) };
+  }
+}
+
+async function broadcastPush(payload) {
+  const subs = await db.listSubscriptions();
+  const results = await Promise.all(subs.map((s) => sendPush(s, payload)));
+  return { sent: results.filter((r) => r.ok).length, total: subs.length };
+}
+
+// Reminder text mentions what's already logged today so it feels alive.
+async function buildReminderPayload(tz) {
+  const { day } = localNow(tz);
+  let body = "Log anything you bought today so tomorrow's numbers are right.";
+  try {
+    const st = await getState(day.slice(0, 7));
+    const todays = st.transactions.filter((t) => t.created_at.slice(0, 10) === day);
+    const left = fmtCents(st.derived.leftToSpend, st.settings.currency);
+    body = todays.length
+      ? `${todays.length} logged today · ${left} left this month. Anything missing?`
+      : `Nothing logged today · ${left} left this month.`;
+  } catch {
+    /* DB down — still send the generic nudge */
+  }
+  return { title: 'Log today’s purchases', body, tag: 'nightly-reminder', url: '/?log=1' };
+}
+
+function fmtCents(cents, currency = 'USD') {
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+      maximumFractionDigits: 0,
+    }).format(cents / 100);
+  } catch {
+    return `$${Math.round(cents / 100)}`;
+  }
+}
+
+// Tick every minute; fire once per local day at REMINDER_HOUR.
+async function reminderTick() {
+  if (!PUSH_ENABLED) return;
+  try {
+    const { day, hour } = localNow(REMINDER_TZ);
+    if (hour !== REMINDER_HOUR) return;
+    if ((await db.getReminderLastSent()) === day) return; // already sent today
+    if ((await db.countSubscriptions()) === 0) return;
+    await db.setReminderLastSent(day); // mark first: never double-send on a retry
+    const res = await broadcastPush(await buildReminderPayload(REMINDER_TZ));
+    console.log(`Nightly reminder sent to ${res.sent}/${res.total} device(s) for ${day}`);
+  } catch (e) {
+    console.warn('reminder tick failed:', e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
 class ApiError extends Error {
@@ -174,12 +277,11 @@ function normalizeCreatedAt(value) {
 // ---------------------------------------------------------------------------
 async function getState(month) {
   await ensureDb();
-  const [settings, categories, txns, allItems, allTransactions] = await Promise.all([
+  const [settings, categories, txns, allItems] = await Promise.all([
     db.getSettings(),
     db.listCategories(),
     db.listTransactionsForMonth(month),
     db.listItems(),
-    db.listAllTransactionsFull(),
   ]);
 
   const itemsByCategory = {};
@@ -212,7 +314,6 @@ async function getState(month) {
     settings,
     categories: cats,
     transactions: txns,
-    allTransactions,
     spentByCategory,
     spentByImportance,
     derived: {
@@ -566,6 +667,59 @@ app.post(
   }),
 );
 
+// ---- push notifications ----------------------------------------------------
+app.get(
+  '/api/push/status',
+  h(async (req, res) => {
+    res.json({
+      enabled: PUSH_ENABLED,
+      publicKey: PUSH_ENABLED ? VAPID_PUBLIC : null,
+      hour: REMINDER_HOUR,
+      timezone: REMINDER_TZ,
+      devices: PUSH_ENABLED ? await db.countSubscriptions() : 0,
+    });
+  }),
+);
+
+app.post(
+  '/api/push/subscribe',
+  h(async (req, res) => {
+    if (!PUSH_ENABLED) throw new ApiError(400, 'Push is not configured on the server.');
+    const b = req.body || {};
+    const endpoint = stringField(b.endpoint, 'endpoint', { min: 8, max: 1000 });
+    const keys = b.keys || {};
+    const p256dh = stringField(keys.p256dh, 'keys.p256dh', { min: 8, max: 400 });
+    const auth = stringField(keys.auth, 'keys.auth', { min: 4, max: 400 });
+    const tz = stringField(b.tz, 'tz', { required: false, min: 1, max: 64 });
+    await db.upsertSubscription({ endpoint, p256dh, auth, tz, created_at: serverLocalISO() });
+    res.status(201).json({ ok: true, devices: await db.countSubscriptions() });
+  }),
+);
+
+app.post(
+  '/api/push/unsubscribe',
+  h(async (req, res) => {
+    const endpoint = stringField((req.body || {}).endpoint, 'endpoint', { min: 8, max: 1000 });
+    await db.deleteSubscription(endpoint);
+    res.json({ ok: true, devices: await db.countSubscriptions() });
+  }),
+);
+
+app.post(
+  '/api/push/test',
+  h(async (req, res) => {
+    if (!PUSH_ENABLED) throw new ApiError(400, 'Push is not configured on the server.');
+    if ((await db.countSubscriptions()) === 0) throw new ApiError(400, 'No devices are subscribed yet.');
+    const result = await broadcastPush({
+      title: 'Test reminder',
+      body: `Reminders work. The real one arrives at ${REMINDER_HOUR}:00 each night.`,
+      tag: 'test',
+      url: '/',
+    });
+    res.json({ ok: true, ...result });
+  }),
+);
+
 // ---- static PWA + SPA fallback ---------------------------------------------
 app.use(
   express.static(PUBLIC_DIR, {
@@ -598,7 +752,16 @@ const server = app.listen(PORT, () => {
   console.log(`Storage: ${db.kind === 'postgres' ? 'Postgres / Supabase' : 'local SQLite'}`);
   console.log(`Auth: ${AUTH_REQUIRED ? 'password required' : 'OFF (no APP_PASSWORD set)'}`);
   console.log(`Google Sheets sync: ${syncEnabled() ? 'ENABLED' : 'off (CSV export only)'}`);
+  console.log(
+    `Nightly reminder: ${PUSH_ENABLED ? `ON at ${REMINDER_HOUR}:00 ${REMINDER_TZ}` : 'off (no VAPID keys)'}`,
+  );
 });
+
+// check every minute so the reminder fires within a minute of the target hour
+if (PUSH_ENABLED) {
+  setInterval(reminderTick, 60 * 1000);
+  reminderTick();
+}
 
 // Keep-alive: touch the DB every few hours so a Supabase free project doesn't
 // pause from inactivity (and recover init if it was down at boot). The Fly app

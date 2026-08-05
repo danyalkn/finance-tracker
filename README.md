@@ -32,6 +32,13 @@ one iPhone, logging every purchase in a few taps and staying on a monthly budget
    key), category chips, the 4 importance levels, an optional note, and Save.
 3. **Charts** — a donut of spending by Category, with a toggle to view by Importance.
    Hand-drawn SVG, no chart library, works fully offline.
+> **Nightly reminder.** With VAPID keys configured, the app pushes a "log today's
+> purchases" notification every night at `REMINDER_HOUR` local time (default 10 PM),
+> mentioning how many you've logged today and what's left this month. Turn it on per
+> device in **Budget → Reminders**. On iPhone this requires iOS 16.4+ **and** the app
+> installed via Add to Home Screen (Safari can't subscribe otherwise) — the UI says so
+> if you try from a browser tab. Tapping the notification opens the log sheet.
+
 4. **Budget** — edit income, savings goal, and each category (name, budget,
    fixed/variable, add/remove); live "income − budgets = left to save vs goal" summary;
    CSV export and Google Sheets sync controls. A category can also have a **breakdown**
@@ -90,6 +97,9 @@ Locally, with no `DATABASE_URL` set, it uses a local SQLite file and **no passwo
 | `DB_PATH` | `./data/finance.db` | SQLite file location (only used when `DATABASE_URL` is unset). |
 | `GSHEET_WEBAPP_URL` | — | Apps Script web-app URL for optional Google Sheets sync (see below). |
 | `GSHEET_SECRET` | — | Shared secret sent with each sync request. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | — | Web-push keys for the nightly reminder. Generate with `npx web-push generate-vapid-keys`. Without them the reminder is simply off. |
+| `REMINDER_HOUR` | `22` | Local hour (0–23) the nightly reminder fires. |
+| `REMINDER_TZ` | `America/Toronto` | IANA timezone that hour is measured in. |
 
 ---
 
@@ -191,6 +201,10 @@ return the recomputed `state` for that month so the UI updates in one round-trip
 | `DELETE /api/items/:id` | remove a breakdown line |
 | `GET /api/export.csv` | **download all transactions** (date, amount, category, importance, note) |
 | `POST /api/sync/test` | send a test row to Google Sheets (if configured) |
+| `GET /api/push/status` | push availability, the VAPID public key, reminder hour/timezone, device count |
+| `POST /api/push/subscribe` | store a device's push subscription |
+| `POST /api/push/unsubscribe` | remove a device's subscription |
+| `POST /api/push/test` | send a test notification to all subscribed devices |
 | `GET /api/auth` | `{ required, authed }` — whether a password is set and the caller is logged in |
 | `POST /api/login` | `{ password }` → sets the auth cookie |
 | `POST /api/logout` | clears the auth cookie |
