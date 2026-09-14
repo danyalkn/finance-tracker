@@ -71,16 +71,26 @@ body {
   font-family: var(--font);
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior-y: none;
+}
+
+/* <html> is the ONE scroll container. Putting overflow/overscroll on <body> too
+   made body its own (empty) scroll container, and overscroll-behavior:none then
+   refused to chain wheel scrolls up to the viewport — on desktop the page only
+   scrolled when the cursor was over a fixed bar. Keep these on html only. */
+html {
   overflow-x: hidden; /* never let an oversized number cause horizontal jiggle */
+  overscroll-behavior-y: none;
 }
 
 body {
   min-height: 100vh;
 }
 
-/* lock the background while the log sheet is open (stops iOS scroll/jiggle) */
-body.sheet-open {
+/* lock the background while the log sheet is open (desktop wheel + iOS jiggle).
+   Applied to <html> (the real scroller) AND body — which one reaches the
+   viewport differs by engine. */
+html.sheet-open,
+html.sheet-open body {
   overflow: hidden;
 }
 
@@ -1147,4 +1157,123 @@ button {
   background: var(--clay);
   color: #fff;
   border-color: var(--clay);
+}
+
+/* ---------- transaction rows are tappable (edit) ---------- */
+.recent li {
+  cursor: pointer;
+}
+.recent li:active {
+  background: var(--surface);
+}
+
+/* keyboard hint (desktop only) + delete inside the edit sheet */
+.kbd-hint {
+  display: none;
+  font-size: 12px;
+  color: var(--muted-2);
+  text-align: center;
+  margin: -8px 0 12px;
+}
+.kbd-hint b {
+  color: var(--muted);
+  font-weight: 600;
+}
+.link-btn.danger {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  text-align: center;
+  color: var(--clay);
+  font-size: 14px;
+}
+
+/* ============================================================
+   DESKTOP (mouse + keyboard): the log sheet becomes a centered
+   two-column modal that fits without scrolling; rows get hover.
+   ============================================================ */
+@keyframes modalin {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (min-width: 760px) and (hover: hover) {
+  .recent li:hover,
+  .cat-card:hover {
+    background: var(--surface-2);
+  }
+  .kbd-hint {
+    display: block;
+  }
+  .sheet {
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: min(94vw, 880px);
+    max-width: none;
+    max-height: 92vh;
+    border-radius: 22px;
+    border: 1px solid var(--line);
+    padding: 18px 26px 26px;
+    animation: modalin 0.16s ease;
+    display: grid;
+    grid-template-columns: 1fr 330px;
+    grid-template-areas:
+      'head head'
+      'amount keypad'
+      'hint keypad'
+      'imp keypad'
+      'chips keypad'
+      'note save';
+    column-gap: 28px;
+    row-gap: 12px;
+    align-content: start;
+  }
+  .sheet.hidden {
+    display: none;
+  }
+  .sheet-head {
+    grid-area: head;
+  }
+  .amount-display {
+    grid-area: amount;
+    text-align: left;
+    margin: 6px 0 0;
+    font-size: 56px;
+  }
+  .kbd-hint {
+    grid-area: hint;
+    text-align: left;
+    margin: 0;
+  }
+  .importance-seg {
+    grid-area: imp;
+  }
+  .chips {
+    grid-area: chips;
+    margin: 0;
+  }
+  .note-input {
+    grid-area: note;
+    margin: 0;
+    align-self: end;
+  }
+  .keypad {
+    grid-area: keypad;
+    align-self: start;
+  }
+  .keypad button {
+    height: 58px;
+  }
+  .save-big {
+    grid-area: save;
+    margin-top: 0;
+    align-self: end;
+  }
+  .link-btn.danger {
+    grid-column: 1 / -1;
+    margin-top: 4px;
+  }
 }

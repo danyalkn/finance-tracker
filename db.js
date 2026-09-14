@@ -195,6 +195,10 @@ async function makePostgres() {
         )).id,
       ),
     getTransaction: (id) => one('SELECT * FROM transactions WHERE id = $1', [id]),
+    updateTransaction: (id, t) =>
+      run('UPDATE transactions SET amount_cents=$1, category_id=$2, importance=$3, note=$4, created_at=$5 WHERE id=$6', [
+        t.amount_cents, t.category_id, t.importance, t.note, t.created_at, id,
+      ]),
     deleteTransaction: async (id) => (await run('DELETE FROM transactions WHERE id = $1', [id])).rowCount,
     listAllTransactions: () =>
       all(
@@ -370,6 +374,10 @@ async function makeSqlite() {
           .run(t.amount_cents, t.category_id, t.importance, t.note, t.created_at).lastInsertRowid,
       ),
     getTransaction: async (id) => db.prepare('SELECT * FROM transactions WHERE id = ?').get(id),
+    updateTransaction: async (id, t) =>
+      db
+        .prepare('UPDATE transactions SET amount_cents=?, category_id=?, importance=?, note=?, created_at=? WHERE id=?')
+        .run(t.amount_cents, t.category_id, t.importance, t.note, t.created_at, id),
     deleteTransaction: async (id) => db.prepare('DELETE FROM transactions WHERE id = ?').run(id).changes,
     listAllTransactions: async () =>
       db

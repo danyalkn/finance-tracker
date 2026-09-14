@@ -178,11 +178,12 @@
     <div id="logSheet" class="sheet hidden" role="dialog" aria-modal="true" aria-label="Log a purchase">
       <div class="sheet-head">
         <button id="logCancel" class="link-btn">Cancel</button>
-        <span class="sheet-title">New purchase</span>
+        <span class="sheet-title" id="sheetTitle">New purchase</span>
         <button id="logSave" class="link-btn save" disabled>Save</button>
       </div>
 
       <div class="amount-display" id="amountDisplay">$0.00</div>
+      <div class="kbd-hint">Type digits like an ATM (1250 → $12.50) · <b>⌫</b> delete · <b>Enter</b> save · <b>Esc</b> cancel</div>
 
       <div class="seg importance-seg" id="importancePicker">
         <button class="seg-btn" data-imp="essential">Essential</button>
@@ -203,6 +204,7 @@
         <button data-key="del" class="key-del" aria-label="delete">⌫</button>
       </div>
       <button id="logSaveBig" class="save-big" disabled>Save purchase</button>
+      <button id="logDelete" class="link-btn danger hidden">Delete purchase</button>
     </div>
 
     <div id="toast" class="toast hidden"></div>

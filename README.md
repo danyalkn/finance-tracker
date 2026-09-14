@@ -191,6 +191,7 @@ return the recomputed `state` for that month so the UI updates in one round-trip
 |---|---|
 | `GET /api/state?month=YYYY-MM` | settings + categories (with spent) + that month's transactions + spent-per-category + spent-per-importance + derived totals |
 | `POST /api/transactions` | create `{ amount_cents, category_id, importance, note?, created_at? }` |
+| `PUT /api/transactions/:id` | edit a purchase — any of `amount_cents`, `category_id`, `importance`, `note`, `created_at` (partial update; Google Sheets sync is append-only and does not receive edits) |
 | `DELETE /api/transactions/:id` | delete a purchase |
 | `PUT /api/settings` | update `monthly_income_cents`, `savings_goal_cents`, `currency` |
 | `POST /api/categories` | add `{ name, type, budget_cents }` |

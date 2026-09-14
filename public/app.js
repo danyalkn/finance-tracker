@@ -38,6 +38,7 @@ let filterCategoryId = null; // home transaction-list category filter (null = al
 let entryCents = 0;
 let entryCategoryId = null;
 let entryImportance = 'have_to_have';
+let editingId = null; // transaction id when the sheet is editing an existing purchase
 
 // ---------- tiny DOM helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -293,7 +294,7 @@ function renderHome() {
             ? `<div class="rec-confirm"><button class="yes" data-action="confirm" data-id="${t.id}">Delete</button><button class="no" data-action="cancel">Cancel</button></div>`
             : `<button class="rec-del" data-action="ask" data-id="${t.id}" aria-label="Delete">✕</button>`;
         const note = t.note ? ` · ${escapeHtml(t.note)}` : '';
-        return `<li>
+        return `<li data-action="edit" data-id="${t.id}" title="Tap to edit">
           <div class="rec-main">
             <div class="rec-top">
               <span class="rec-cat">${escapeHtml(t.category_name)}</span>
@@ -481,31 +482,42 @@ async function syncTest() {
 // ============================================================
 // LOG SHEET (the 5-second fast path)
 // ============================================================
-function openSheet() {
-  entryCents = 0;
-  entryCategoryId = null;
-  entryImportance = 'have_to_have';
-  $('noteInput').value = '';
+// Open the log sheet. Pass an existing transaction to edit it in place.
+function openSheet(txn) {
+  const editing = Boolean(txn && typeof txn.id === 'number');
+  editingId = editing ? txn.id : null;
+  entryCents = editing ? txn.amount_cents : 0;
+  entryCategoryId = editing ? txn.category_id : null;
+  entryImportance = editing ? txn.importance : 'have_to_have';
+  $('noteInput').value = editing && txn.note ? txn.note : '';
 
-  // importance picker default
+  $('sheetTitle').textContent = editing ? 'Edit purchase' : 'New purchase';
+  $('logSaveBig').textContent = editing ? 'Save changes' : 'Save purchase';
+  $('logDelete').classList.toggle('hidden', !editing);
+
   document.querySelectorAll('#importancePicker .seg-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.imp === entryImportance);
   });
 
   // category chips (every category is loggable — incl. fixed like Living)
   $('categoryChips').innerHTML = state.categories
-    .map((c) => `<button class="chip" data-cat="${c.id}">${escapeHtml(c.name)}</button>`)
+    .map(
+      (c) =>
+        `<button class="chip${c.id === entryCategoryId ? ' active' : ''}" data-cat="${c.id}">${escapeHtml(c.name)}</button>`,
+    )
     .join('');
 
   updateEntryDisplay();
   $('logBackdrop').classList.remove('hidden');
   $('logSheet').classList.remove('hidden');
-  document.body.classList.add('sheet-open'); // lock background scroll (iOS jiggle)
+  document.documentElement.classList.add('sheet-open'); // lock background scroll
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 }
 function closeSheet() {
   $('logSheet').classList.add('hidden');
   $('logBackdrop').classList.add('hidden');
-  document.body.classList.remove('sheet-open');
+  document.documentElement.classList.remove('sheet-open');
+  editingId = null;
 }
 function updateEntryDisplay() {
   $('amountDisplay').textContent = fmt(entryCents);
@@ -527,9 +539,29 @@ function keypadPress(key) {
 }
 async function savePurchase() {
   if (entryCents <= 0 || entryCategoryId == null) return;
+  if ($('logSheet').classList.contains('hidden')) return;
   $('logSave').disabled = true;
   $('logSaveBig').disabled = true;
-  // a purchase is logged "now" -> it belongs to the current local month
+  const note = $('noteInput').value.trim() || null;
+
+  // ---- editing an existing purchase: update in place, keep the viewed month ----
+  if (editingId != null) {
+    try {
+      const resp = await api(`/api/transactions/${editingId}${monthQS()}`, {
+        method: 'PUT',
+        body: { amount_cents: entryCents, category_id: entryCategoryId, importance: entryImportance, note },
+      });
+      applyState(resp.state);
+      closeSheet();
+      toast('Saved ✓');
+    } catch (e) {
+      toast(e.message, true);
+      updateEntryDisplay();
+    }
+    return;
+  }
+
+  // ---- new purchase: logged "now" -> belongs to the current local month ----
   const logMonth = localMonthStr();
   try {
     const resp = await api(`/api/transactions?month=${encodeURIComponent(logMonth)}`, {
@@ -538,7 +570,7 @@ async function savePurchase() {
         amount_cents: entryCents,
         category_id: entryCategoryId,
         importance: entryImportance,
-        note: $('noteInput').value.trim() || null,
+        note,
         created_at: localISO(),
       },
     });
@@ -552,6 +584,20 @@ async function savePurchase() {
     // selectedMonth is untouched on failure, so the view stays consistent
     toast(e.message, true);
     updateEntryDisplay();
+  }
+}
+
+// Delete from inside the edit sheet.
+async function deleteEditing() {
+  if (editingId == null) return;
+  if (!confirm('Delete this purchase?')) return;
+  try {
+    const resp = await api(`/api/transactions/${editingId}${monthQS()}`, { method: 'DELETE' });
+    applyState(resp.state);
+    closeSheet();
+    toast('Deleted');
+  } catch (e) {
+    toast(e.message, true);
   }
 }
 
@@ -579,13 +625,40 @@ function wireEvents() {
   document.querySelectorAll('.tab[data-screen]').forEach((t) => {
     t.onclick = () => showScreen(t.dataset.screen);
   });
-  $('logBtn').onclick = openSheet;
+  $('logBtn').onclick = () => openSheet();
 
   // log sheet
   $('logCancel').onclick = closeSheet;
   $('logBackdrop').onclick = closeSheet;
   $('logSave').onclick = savePurchase;
   $('logSaveBig').onclick = savePurchase;
+  $('logDelete').onclick = deleteEditing;
+
+  // Physical keyboard (desktop): digits type into the amount ATM-style, Backspace
+  // deletes, Enter saves, Esc cancels. Typing inside the note field is left alone.
+  document.addEventListener('keydown', (e) => {
+    if ($('logSheet').classList.contains('hidden')) return;
+    const el = e.target;
+    const inField = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSheet();
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      savePurchase();
+      return;
+    }
+    if (inField || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      keypadPress(e.key);
+    } else if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      keypadPress('del');
+    }
+  });
   $('keypad').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-key]');
     if (btn) keypadPress(btn.dataset.key);
@@ -629,10 +702,16 @@ function wireEvents() {
 
   // recent list delete (event delegation)
   $('recentList').addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-action]');
+    const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const action = btn.dataset.action;
-    if (action === 'ask') {
+    if (action === 'edit') {
+      const txn = (state.transactions || []).find((t) => t.id === Number(btn.dataset.id));
+      if (txn) {
+        pendingDeleteId = null;
+        openSheet(txn);
+      }
+    } else if (action === 'ask') {
       pendingDeleteId = Number(btn.dataset.id);
       renderHome();
     } else if (action === 'cancel') {

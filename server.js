@@ -477,6 +477,36 @@ app.post(
   }),
 );
 
+app.put(
+  '/api/transactions/:id',
+  h(async (req, res) => {
+    const id = intField(req.params.id, 'id', { min: 1, max: Number.MAX_SAFE_INTEGER });
+    const current = await db.getTransaction(id);
+    if (!current) throw new ApiError(404, 'transaction not found');
+    const body = req.body || {};
+    const amount_cents =
+      body.amount_cents === undefined ? current.amount_cents : intField(body.amount_cents, 'amount_cents', { min: 1 });
+    let category_id = current.category_id;
+    if (body.category_id !== undefined) {
+      category_id = intField(body.category_id, 'category_id', { min: 1, max: Number.MAX_SAFE_INTEGER });
+      if (!(await db.getCategory(category_id))) throw new ApiError(400, 'category_id does not exist');
+    }
+    let importance = current.importance;
+    if (body.importance !== undefined) {
+      if (!IMPORTANCE.has(body.importance)) throw new ApiError(400, 'invalid importance');
+      importance = body.importance;
+    }
+    const note = body.note === undefined ? current.note : stringField(body.note, 'note', { required: false, min: 1, max: 280 });
+    const created_at = body.created_at === undefined ? current.created_at : normalizeCreatedAt(body.created_at);
+    await db.updateTransaction(id, { amount_cents, category_id, importance, note, created_at });
+    res.json({
+      ok: true,
+      transaction: await db.getTransaction(id),
+      state: await getState(validateMonth(req.query.month)),
+    });
+  }),
+);
+
 app.delete(
   '/api/transactions/:id',
   h(async (req, res) => {
