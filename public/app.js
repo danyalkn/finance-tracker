@@ -15,12 +15,16 @@ const IMPORTANCE_LABELS = {
   shouldnt_have: "Shouldn't Have",
 };
 const IMPORTANCE_ORDER = ['essential', 'have_to_have', 'nice_to_have', 'shouldnt_have'];
-// Validated categorical palette (via the dataviz skill's validator): distinct
-// hues so any two slices are easy to tell apart, one set per theme (each stepped
-// for its surface). Assigned by category index so a category keeps its colour.
+// Validated categorical palette: distinct hues so any two slices are easy to tell
+// apart, one set per theme (each stepped for its surface). Assigned by category
+// index so a category keeps its colour.
+// 10 slots — one per category. Slots 9/10 (brown, cyan) were chosen by searching
+// hue space for maximum separation from the first eight: every new colour sits
+// >=10 ΔE from all others, and the palette's worst pair is unchanged. Adding an
+// 11th category would cycle and reuse slot 1's colour — extend this list instead.
 const CHART_PALETTE = {
-  dark: ['#3987e5', '#199e70', '#c98500', '#008300', '#9085e9', '#e66767', '#d55181', '#d95926'],
-  light: ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834'],
+  dark: ['#3987e5', '#199e70', '#c98500', '#008300', '#9085e9', '#e66767', '#d55181', '#d95926', '#9c6b4a', '#52c2dd'],
+  light: ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834', '#96603f', '#2394b5'],
 };
 let theme = 'dark';
 const chartColors = () => CHART_PALETTE[theme] || CHART_PALETTE.dark;
